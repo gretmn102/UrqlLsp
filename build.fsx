@@ -57,22 +57,7 @@ Target.create "BuildTest" (fun _ ->
     |> Fake.IO.Path.getDirectory
     |> dotnetBuild
 )
-Target.create "BuildUtility" (fun _ ->
-    utilityProjpath
-    |> Fake.IO.Path.getDirectory
-    |> dotnetBuild
-)
 
-Target.create "Copy3rd" <| fun _ ->
-    let srcDir = @"3rd"
-    if not <| System.IO.Directory.Exists srcDir then
-        failwithf "'%s' not found" srcDir
-    targetFrameworks
-    |> List.iter (fun targetFramework ->
-        let localPath = sprintf "bin/%A/%s" buildConf targetFramework
-        let dstDir = sprintf "%s/%s/%s" serverProjName localPath srcDir
-        Fake.IO.Shell.copyDir dstDir srcDir (fun _ -> true)
-    )
 let run projName targetFramework projPath =
     let dir = Fake.IO.Path.getDirectory projPath
     let localpath = sprintf "bin/%A/%s/%s.exe" buildConf targetFramework projName
@@ -125,11 +110,9 @@ open Fake.Core.TargetOperators
 Target.create "Default" ignore
 
 "BuildServer"
-  ==> "Copy3rd"
   ==> "Default"
 
 "BuildTest"
-  ==> "Copy3rd"
   ==> "CopyToMainProj"
   ==> "RunTest"
 

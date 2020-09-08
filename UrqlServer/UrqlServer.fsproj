@@ -11,8 +11,8 @@
     <ProjectReference Include="..\paket-files\github.com\gretmn102\FsharpMyExtension\FsharpMyExtension\FsharpMyExtension\FsharpMyExtension.fsproj">
       <Name>FsharpMyExtension.fsproj</Name>
     </ProjectReference>
-    <ProjectReference Include="..\UrqlParse\UrqlParse.fsproj">
-      <Name>UrqlParse.fsproj</Name>
+    <ProjectReference Include="..\UrqlParser\UrqlParser.fsproj">
+      <Name>UrqlParser.fsproj</Name>
     </ProjectReference>
   </ItemGroup>
   <ItemGroup>
