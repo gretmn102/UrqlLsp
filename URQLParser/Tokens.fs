@@ -2,14 +2,30 @@ module Qsp.Tokens
 
 type Range = FParsec.Position * FParsec.Position
 
+[<Struct>]
 type TokenType =
+    | If
+    | ElseIf
+    | Else
+    | Act
+    | Colon
+    | End
+    | Underscore
+    | Exit
+
+    | For
+    | To
+    | Step
+
     /// в TS `var` называется `storage.type.js`
     | Type
     | Keyword
-    /// `act`, `if`, `then`, `end`
-    | KeywordControl
-    | Function
 
+    | SharpBeginLoc
+    | MinusEndLoc
+
+    | Function
+    /// В QSP `comment.line` и `comment.block` объединены
     | Comment
 
     | Procedure
@@ -18,22 +34,25 @@ type TokenType =
     ///
     /// `=`
     | OperatorAssignment
-    /// `keyword.operator.arithmetic.js`
-    ///
-    /// `-` `+` `*` `/`
-    | OperatorArithmetic
-    /// `keyword.operator.comparison.js`
-    ///
-    /// `=`
-    | OperatorComparison
-    /// `keyword.operator.relational.js`
-    ///
-    /// `>` `>=` `<` `<=`
-    | OperatorRelational
+    // /// `keyword.operator.arithmetic.js`
+    // ///
+    // /// `-` `+` `*` `/`
+    // | OperatorArithmetic
+    // /// `keyword.operator.comparison.js`
+    // ///
+    // /// `=`
+    // | OperatorComparison
+    // /// `keyword.operator.relational.js`
+    // ///
+    // /// `>` `>=` `<` `<=`
+    // | OperatorRelational
     /// `punctuation.terminator.statement.js`
     ///
     /// `&`
     | PunctuationTerminatorStatement
+
+    | UnaryOperator of UnaryOperator : Ast.UnarOp
+    | BinaryOperator of BinaryOperator : Ast.Op
 
     // | PunctuationDefinitionStringBegin
     // | PunctuationDefinitionStringEnd
@@ -56,6 +75,14 @@ type TokenType =
     | InterpolationEnd
 
     | ConstantNumericInteger
+    /// meta.brace.square.js
+    ///
+    /// `[`
+    | BraceSquareOpened
+    /// meta.brace.square.js
+    ///
+    /// `]`
+    | BraceSquareClosed
 type InlineRange =
     {
         Line: int64

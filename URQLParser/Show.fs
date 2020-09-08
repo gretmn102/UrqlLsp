@@ -79,7 +79,21 @@ let showValue showExpr showStmtsInline = function
 let ops = Op.toString >> showString
 
 let unar = function No -> "no" | Obj -> "obj" | Neg -> "-" | Loc -> "loc"
-
+let showFuncName = function
+    | PredefUndef.Predef name ->
+        match Map.tryFind name Qsp.Defines.functionBySymbolic with
+        | Some x ->
+            let _, returnedType = x.Signature
+            let returnedType =
+                match returnedType with
+                | Defines.Numeric -> id
+                | Defines.String -> showChar '$'
+                | Defines.Any -> id // TODO: defines by argument type
+            let nameStr = (string name).ToLower()
+            returnedType << showString nameStr
+        | None -> failwithf "%A not found in `functionBySymbolic`" name
+    | PredefUndef.Undef name ->
+        showString name
 let rec simpleShowExpr showStmtsInline expr : ShowS =
     let rec f = function
         | Val v -> showValue (simpleShowExpr showStmtsInline) showStmtsInline v
@@ -90,7 +104,7 @@ let rec simpleShowExpr showStmtsInline expr : ShowS =
                     empty
                 else
                     showParen true (List.map f args |> join ", ")
-            showString name << args
+            showFuncName name << args
         | UnarExpr(op, e) ->
             let space = function Obj | No | Loc -> showSpace | Neg -> id
             let x =
@@ -131,7 +145,7 @@ let rec showExpr showStmtsInline = function
             else
                 showParen true
                     (List.map (showExpr showStmtsInline) args |> join ", ")
-        showString name << args
+        showFuncName name << args
     | UnarExpr(op, e) ->
         let space = function Obj | No | Loc -> showSpace | Neg -> id
         showString (unar op) << space op << showExpr showStmtsInline e
@@ -151,11 +165,11 @@ let showAssign showStmtsInline = function
     | AssignWhat.AssignArrAppend var -> showVar var << showString "[]"
 
 let (|OneStmt|_|) = function
-    | [x] ->
+    | [pos, x] ->
         match x with
         // | StarPl(Val (String _)) -> None
-        | StarPl _ -> None // Как правило, строки очень длинные, потому пусть лучше будет так
-        | Assign _ | CallSt _ | Comment _ -> Some x
+        | Proc(name, _) when name.ToLower() = "*pl" -> None // Как правило, строки очень длинные, потому пусть лучше будет так
+        | Assign _ | Proc _ | Comment _ -> Some (pos, x)
         | AssignCode _ -> None // спорно
         | Act _ | If _ -> None
         | Label _ -> None // эту нечисть нужно как можно более нагляднее подчеркнуть. Да странно будет, если она окажется одна в списке инструкций.
@@ -177,7 +191,7 @@ let showStmt indentsOption (formatConfig:FormatConfig) =
             showChar '\t'
         | UsingSpaces spacesCount ->
             replicate spacesCount ' '
-    let rec f' stmt =
+    let rec f' (pos, stmt) =
         let showStmtsInline xs : ShowS =
             List.collect f' xs // TODO
             |> join "&"
@@ -191,14 +205,7 @@ let showStmt indentsOption (formatConfig:FormatConfig) =
             [showAssign ass << spaceBetween (showChar '=' << ops op) << showExpr e]
         | Assign(ass, e) ->
             [showAssign ass << spaceBetween (showChar '=') << showExpr e]
-        | CallSt(name, es) ->
-            let args =
-                if List.isEmpty es then
-                    empty
-                else
-                    showSpace << (List.map showExpr es |> join ", ")
-            [ showString name << args ]
-        | StarPl e ->
+        | Proc(name, [e]) when name.ToLower() = "*pl" ->
             if formatConfig.IsSplitStringPl then
                 match e with
                 | Val(String str) ->
@@ -218,6 +225,13 @@ let showStmt indentsOption (formatConfig:FormatConfig) =
                     [ showExpr e ]
             else
                 [ showExpr e ]
+        | Proc(name, e) ->
+            let args =
+                if List.isEmpty e then
+                    empty
+                else
+                    showSpace << (List.map showExpr e |> join ", ")
+            [ showString name << args ]
         | Label s -> [showChar ':' << showString s]
         | If(e, thenBody, elseBody) ->
             let ifHeader e = showString "if" << showSpace << showExpr e << showChar ':'
@@ -233,7 +247,7 @@ let showStmt indentsOption (formatConfig:FormatConfig) =
                           << showSpace << showStmtsInline [x]
                 | _ ->
                     let rec body : _ -> ShowS list = function
-                        | [If(e, thenBody, elseBody)] ->
+                        | [pos, If(e, thenBody, elseBody)] ->
                             [
                                 yield showString "elseif" << showSpace << showExpr e << showChar ':'
                                 yield! thenBody
@@ -271,7 +285,7 @@ let showStmt indentsOption (formatConfig:FormatConfig) =
                             (f' >> List.map ((<<) tabs))
                     yield showString "end"
             ]
-        | For(var, fromExpr, toExpr, body) ->
+        | For(var, fromExpr, toExpr, stepExpr, body) ->
             let header =
                 showString "for"
                 << showSpace << showVar var
@@ -279,6 +293,11 @@ let showStmt indentsOption (formatConfig:FormatConfig) =
                 << showSpace << showExpr fromExpr
                 << showSpace << showString "to"
                 << showSpace << showExpr toExpr
+                << (stepExpr
+                    |> Option.map (fun expr ->
+                        showSpace << showString "step"
+                        << showSpace << showExpr expr
+                    ) |> Option.defaultValue empty)
                 << showChar ':'
             [
                 match body with

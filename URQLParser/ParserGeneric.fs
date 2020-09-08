@@ -4,6 +4,9 @@ open FsharpMyExtension
 open FsharpMyExtension.Either
 open Qsp
 
+let fparsecPosToPos (pos:FParsec.Position) =
+    Ast.positionCreate pos.StreamName pos.Index pos.Line pos.Column
+
 let runEither p str =
     match run p str with
     | Success(x, _, _) -> Right x
@@ -12,7 +15,7 @@ let runStateEither p st str =
     match runParserOnString p st "" str with
     | Success(x, st, _) -> st, Right(x)
     | Failure(x, _, st) -> st, Left(x)
-let isIdentifierChar c = isLetter c || isDigit c || c = '_' || c = '.'
+let isIdentifierChar c = isLetter c || isDigit c || c = '_' || c = '.' || c = '$'
 
 let ident<'UserState> =
     skipChar '_' >>? many1Satisfy isIdentifierChar
@@ -98,6 +101,11 @@ let highlightsEmpty =
         VarHighlights = varHighlightsEmpty
         LocHighlights = locHighlightsEmpty
     }
+type HoverDescription =
+    | FuncDescription of Defines.PredefFunc
+    // | VarDescription of Defines.
+    | RawDescription of string
+
 type 'a Parser = Parser<'a, State>
 
 and State =
@@ -108,7 +116,7 @@ and State =
         /// А если хочется понять, что инструкция `gt 'some loc'` верна, то придется пройтись дважды, чтобы определить, существует ли вообще `'some loc'`. Если бы локации определялись последовательно, то есть нельзя было бы обратиться к той, что — ниже, тогда потребовался только один проход. Но в таком случае придется вводить что-то вроде `rec`, чтобы перейти на локацию, определенную ниже. Но всё это возвращает к той же задаче, потому ну его.
         SemanticErrors: (Tokens.InlineRange * string) list
         /// Информация обо всём и вся
-        Hovers: (Tokens.InlineRange * string) list
+        Hovers: (Tokens.InlineRange * HoverDescription) list
         Highlights: Highlights
         /// Нужен для `elseif` конструкции. Эх, если бы ее можно было как-то именно там оставить, но увы.
         IsEndOptional : bool
@@ -116,7 +124,7 @@ and State =
         /// Локации, которые неопределенны именно в этом документе, но переходы к ним есть
         NotDefinedLocs: Map<Ast.LocationName, Tokens.InlineRange list>
         // Я тут, это самое, оставлю. Никто не возражает?
-        PStmts: Parser<Ast.Statement list>
+        PStmts: Parser<Ast.PosStatement list>
         /// `&lt;a gt ''x''>`
         SingleQuotNestedCount: int
         DoubleQuotNestedCount: int

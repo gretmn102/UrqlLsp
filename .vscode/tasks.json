@@ -7,23 +7,35 @@
             "label": "build",
             "type": "shell",
             "command": "build.cmd",
-            "args": ["RunTest"],
+            "args": [
+                "-t",
+                "RunTest"
+            ],
             "group": {
                 "kind": "build",
                 "isDefault": true
-            }
+            },
+            "problemMatcher": []
         },
         {
-            "label": "build&run",
+            "label": "BuildUtility",
             "type": "shell",
             "command": "build.cmd",
-            "args": ["RunMainProj"]
+            "args": [
+                "-t",
+                "BuildUtility"
+            ],
+            "problemMatcher": []
         },
         {
             "label": "TrimTrailingWhitespace",
             "type": "shell",
             "command": "build.cmd",
-            "args": ["TrimTrailingWhitespace"]
+            "args": [
+                "-t",
+                "TrimTrailingWhitespace"
+            ],
+            "problemMatcher": []
         }
     ]
 }

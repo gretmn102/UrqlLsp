@@ -47,7 +47,7 @@ let pexplicitVar varHighlightKind : _ Parser =
                     | None -> "Пользовательская глобальная переменная числового типа"
             | ImplicitNumericType -> failwith "Not Implemented"
         appendToken2 Tokens.Variable range
-        >>. appendHover2 msg range
+        >>. appendHover2 (RawDescription msg) range
         >>. appendVarHighlight range (typ, varName) varHighlightKind
         >>. preturn (typ, varName)
 type ProcOrFunc =
@@ -55,98 +55,140 @@ type ProcOrFunc =
     | Function of string
 
 let notFollowedByBinOpIdent =
-    // конечно, тут нужно объяснить пользователю, почему именно нельзя использовать то или иное слово
-    // проще назвать, что допустимо
-    // let p =
-    //     choice [
-    //         spaces1
-    //         skipChar '"'
-    //         skipChar '''
-    //         eof
-    //     ]
-    // let followedVarCont =
-    //     followedBy (satisfy (fun c -> isDigit c || c = '_' || c = '.'))
     let p =
         pbinaryOperator
         .>> (skipSatisfy (not << isIdentifierChar)
              <|> eof)
     let p2 =
-        notFollowedByL p "идентификатор, а не строковый бинарный оператор"
+        notFollowedByL p "keyword"
         >>. ident
-    // runStateEither p2 emptyState "no"
-    // runStateEither p2 emptyState "no " // нельзя
-    // runStateEither p2 emptyState "node" // можно
-    // runStateEither p2 emptyState "foobar" // можно
     p2
+let ws =
+    ws
+    >>. skipMany
+            (appendToken TokenType.Underscore (pchar '_')
+             >>? ((ws1 >>? skipNewline) <|> skipNewline) >>. spaces)
 
 let term expr =
+    let getDesc (varType, (name:string)) =
+        match varType with
+        | StringType ->
+            Defines.vars
+            |> Map.tryFind (sprintf "$%s" (name.ToLower()))
+            |> function
+                | Some dscr -> dscr
+                | None -> "Пользовательская глобальная переменная строчного типа"
+        | ExplicitNumericType ->
+            Defines.vars
+            |> Map.tryFind (sprintf "#%s" (name.ToLower()))
+            |> function
+                | Some dscr -> dscr
+                | None -> "Пользовательская глобальная переменная числового типа"
+        | ImplicitNumericType ->
+            Defines.vars
+            |> Map.tryFind (name.ToLower())
+            |> function
+                | Some dscr -> dscr
+                | None ->
+                    "Пользовательская глобальная переменная числового типа"
+    let pterm, ptermRef = createParserForwardedToRef()
     let pcallFuncOrArrOrVar =
-        let pbraket = bet_ws '[' ']' (sepBy expr (skipChar ',' >>. ws))
-        let pexplicitVar =
-            pexplicitVar VarHighlightKind.ReadAccess .>> ws .>>. opt pbraket
-            |>> fun (var, arr) ->
-                match arr with
-                | Some args -> Arr(var, args)
-                | None -> Var var
+        let pbraket =
+            between
+                (appendToken TokenType.BraceSquareOpened (pchar '[' .>> ws))
+                (appendToken TokenType.BraceSquareClosed (pchar ']'))
+                (sepBy expr (skipChar ',' >>. ws))
         let pBracesArgs =
             bet_ws '(' ')' (sepBy expr (pchar ',' >>. ws))
         let pcallFunctionOrArrOrVar =
+            let pimplicitVar =
+                notFollowedByBinOpIdent |>> fun x -> ImplicitNumericType, x
+            let pexplicitVar =
+                let isIdentifierFirstChar c = isLetter c || c = '_'
+                let p = many1Satisfy2L isIdentifierFirstChar isIdentifierChar "identifier"
+                // TODO: или просто `many1Satisfy isIdentifierChar` ?
+                let varType =
+                    choice [
+                        pchar '#' >>% ExplicitNumericType
+                        pchar '$' >>% StringType
+                    ]
+                varType .>>. p
+
             tuple2
-                (applyRange notFollowedByBinOpIdent
-                 .>> ws)
-                ((pBracesArgs |>> fun args -> TokenType.Function, fun name -> Func(name, args))
-                  <|> (pbraket
-                       |>> fun arg ->
-                            let f name = Arr((ImplicitNumericType, name), arg)
-                            TokenType.Variable, f)
-                  <|>% (TokenType.Variable, fun name -> Var(ImplicitNumericType, name)))
-            >>= fun ((range, name), (tokenType, f)) ->
-                    match tokenType with
-                    | TokenType.Function ->
-                        match f name with
-                        | Func(name, args) as func ->
-                            let p =
-                                [
-                                    "Такой функции нет, а если есть, то напишите мне, автору расширения, пожалуйста, и я непременно добавлю."
-                                    "Когда-нибудь добавлю: 'Возможно, вы имели ввиду: ...'"
-                                ]
-                                |> String.concat "\n"
-                                |> appendSemanticError range
-                            p
-                            >>. appendToken2 tokenType range
-                            >>% func
-                        | func -> preturn func
-                    | TokenType.Variable ->
+                (applyRange (pexplicitVar <|> pimplicitVar) .>> ws)
+                ((pBracesArgs
+                  |>> fun args ->
+                    let tokenType = TokenType.Function
+                    fun (funType, name) range ->
                         let p =
-                            Defines.vars
-                            |> Map.tryFind (name.ToLower())
-                            |> function
-                                | Some dscr ->
-                                    appendHover2 dscr range
-                                | None ->
-                                    let dscr = "Пользовательская глобальная переменная числового типа"
-                                    appendHover2 dscr range
+                            [
+                                "Такой функции нет, а если есть, то напишите мне, автору расширения, пожалуйста, и я непременно добавлю."
+                                "Когда-нибудь добавлю: 'Возможно, вы имели ввиду: ...'"
+                            ]
+                            |> String.concat "\n"
+                            |> appendSemanticError range
                         p
                         >>. appendToken2 tokenType range
-                        >>. appendVarHighlight range (ImplicitNumericType, name) VarHighlightKind.ReadAccess
-                        >>% f name
-                    | tokenType ->
-                        appendToken2 tokenType range
-                        >>% f name
-        let pPreDefFunc =
-            Defines.functions
+                        >>% Func(Undef name, args)
+                    )
+                //   Невозможно, поскольку неоднозначно трактуется `f+1` => `f(+1)` или `f + 1`
+                //   <|> (pterm |>> fun arg -> TokenType.Function, fun (typ', name) -> Func(name, [arg]))
+                  <|> (pbraket
+                       |>> fun args ->
+                            fun (varType, nameVar) range ->
+                                let desc = getDesc(varType, nameVar)
+                                appendHover2 (RawDescription desc) range
+                                >>. appendToken2 TokenType.Variable range
+                                >>. appendVarHighlight range (varType, nameVar) VarHighlightKind.ReadAccess
+                                >>% Arr((varType, nameVar), args))
+                  <|>% fun (varType, nameVar) range ->
+                        let desc = getDesc(varType, nameVar)
+                        appendHover2 (RawDescription desc) range
+                        >>. appendToken2 TokenType.Variable range
+                        >>. appendVarHighlight range (varType, nameVar) VarHighlightKind.ReadAccess
+                        >>% Var(varType, nameVar))
+            >>= fun ((range, (varType, name)), f) ->
+                    f (varType, name) range
+        // #load @"Defines.fs"
+        // open Qsp
+        let nullary, multiary =
+            Defines.functionsByName
+            |> Map.partition (fun _ x ->
+                let x, _ = x.Signature
+                match x with
+                | Defines.JustOverloads []
+                | Defines.JustOverloads [([||], ())] -> true
+                | _ -> false
+            )
+        let nullaryFunc =
+            nullary
             |> Seq.sortByDescending (fun (KeyValue(name, _)) -> name) // для жадности
-            |> Seq.map (fun (KeyValue(name, (dscr, sign))) ->
-                applyRange (pstringCI name .>>? notFollowedVarCont)
+            |> Seq.map (fun (KeyValue(name, x)) ->
+                applyRange (opt (pchar '$') >>? pstringCI name .>>? notFollowedVarCont)
                 >>= fun (range, name) ->
                     appendToken2 TokenType.Function range
-                    >>. appendHover2 dscr range
-                    >>% (name, range, sign)
+                    >>. appendHover2 (FuncDescription x.SymbolicName) range
+                    >>% (name, range, x)
             )
             |> List.ofSeq
             |> choice
-        pPreDefFunc .>> ws .>>. (opt pBracesArgs |>> Option.defaultValue [])
-        >>= fun ((name, range, (sign, returnType)), args) ->
+
+        let pPreDefFunc =
+            multiary
+            |> Seq.sortByDescending (fun (KeyValue(name, _)) -> name) // для жадности
+            |> Seq.map (fun (KeyValue(name, x)) ->
+                applyRange (opt (pchar '$') >>? pstringCI name .>>? notFollowedVarCont)
+                >>= fun (range, name) ->
+                    appendToken2 TokenType.Function range
+                    >>. appendHover2 (FuncDescription x.SymbolicName) range
+                    >>% (name, range, x)
+            )
+            |> List.ofSeq
+            |> choice
+        nullaryFunc .>>. (ws >>. (pBracesArgs <|>% []))
+        <|> (pPreDefFunc .>> ws .>>. (pBracesArgs <|> (pterm |>> List.singleton) <|>% []))
+        >>= fun ((stringName, range, x), args) ->
+                let sign, returnType = x.Signature
                 let p =
                     args
                     |> Array.ofList
@@ -154,14 +196,13 @@ let term expr =
                     |> function
                         | None ->
                             let msg =
-                                Defines.Show.printFuncSignature name returnType sign
+                                Defines.Show.printFuncSignature stringName returnType sign
                                 |> sprintf "Ожидается одна из перегрузок:\n%s"
                             appendSemanticError range msg
                         | Some () ->
                             preturn ()
                 p
-                >>% Func(name, args)
-        <|> pexplicitVar
+                >>% Func(Predef x.SymbolicName, args)
         <|> pcallFunctionOrArrOrVar
     let pval =
         choice [
@@ -171,6 +212,7 @@ let term expr =
                 (pint32 |>> Int)
         ]
         |>> Val
+    ptermRef := pval <|> pcallFuncOrArrOrVar
     pval <|> pcallFuncOrArrOrVar <|> bet_ws '(' ')' expr
 
 let pExprOld : _ Parser =
@@ -224,37 +266,37 @@ let pExprNew : _ Parser =
         appendToken typ (pstring c)
 
     let pNeg =
-        pchar '-' TokenType.OperatorArithmetic >>. ws >>. term
+        pchar '-' (TokenType.UnaryOperator Neg) >>. ws >>. term
         |>> fun e1 -> UnarExpr(Neg, e1)
     let pProd =
         chainl1 (pNeg <|> term .>> ws)
-            ((pchar '*' TokenType.OperatorArithmetic >>% Times
-              <|> (pchar '/' TokenType.OperatorArithmetic >>% Divide))
+            ((pchar '*' (TokenType.BinaryOperator Times) >>% Times
+              <|> (pchar '/' (TokenType.BinaryOperator Divide) >>% Divide))
              .>> ws |>> fun op e1 e2 -> Expr(op, e1, e2))
     let pMod =
         chainl1 (pProd .>> ws)
-            ((pstringCI "mod" TokenType.OperatorArithmetic >>? notFollowedVarCont >>. ws >>% Mod)
+            ((pstringCI "mod" (TokenType.BinaryOperator Mod) >>? notFollowedVarCont >>. ws >>% Mod)
              .>> ws |>> fun op e1 e2 -> Expr(op, e1, e2))
     let pSum =
         chainl1 (pMod .>> ws)
-            ((pchar '+' TokenType.OperatorArithmetic >>% Plus
-              <|> (pchar '-' TokenType.OperatorArithmetic >>% Minus))
+            ((pchar '+' (TokenType.BinaryOperator Plus) >>% Plus
+              <|> (pchar '-' (TokenType.BinaryOperator Minus) >>% Minus))
              .>> ws |>> fun op e1 e2 -> Expr(op, e1, e2))
     let pCompare pNo =
         chainl1 (pNo <|> pSum .>> ws)
             (choice [
-                pstring "=>" TokenType.OperatorComparison >>% Eg
-                pstring "=<" TokenType.OperatorComparison >>% El
-                pchar '=' TokenType.OperatorRelational >>% Eq
+                pstring "=>" (TokenType.BinaryOperator Eg) >>% Eg
+                pstring "=<" (TokenType.BinaryOperator El) >>% El
+                pchar '=' (TokenType.BinaryOperator Eq) >>% Eq
 
-                pstring "<>" TokenType.OperatorRelational >>% Ne
-                pstring "<=" TokenType.OperatorComparison >>% Le
-                pchar '<' TokenType.OperatorComparison >>% Lt
+                pstring "<>" (TokenType.BinaryOperator Ne) >>% Ne
+                pstring "<=" (TokenType.BinaryOperator Le) >>% Le
+                pchar '<' (TokenType.BinaryOperator Lt) >>% Lt
 
-                pstring ">=" TokenType.OperatorComparison >>% Ge
-                pchar '>' TokenType.OperatorComparison .>>? notFollowedBy (FParsec.CharParsers.pchar '>') >>% Gt // чтобы исключить `>>`
+                pstring ">=" (TokenType.BinaryOperator Ge) >>% Ge
+                pchar '>' (TokenType.BinaryOperator Gt) .>>? notFollowedBy (FParsec.CharParsers.pchar '>') >>% Gt // чтобы исключить `>>`
 
-                pchar '!' TokenType.OperatorRelational >>% Bang
+                pchar '!' (TokenType.BinaryOperator Bang) >>% Bang
              ]
              .>> ws |>> fun op e1 e2 -> Expr(op, e1, e2))
     let pObj pNo =

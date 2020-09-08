@@ -1,14 +1,15 @@
 // --------------------------------------------------------------------------------------
 // FAKE build script
 // --------------------------------------------------------------------------------------
-#r "./packages/build/FAKE/tools/FakeLib.dll"
+#r "paket: groupref build //"
+#load ".fake/build.fsx/intellisense.fsx"
 open Fake.IO.Globbing.Operators
 open Fake.Core
 // --------------------------------------------------------------------------------------
 // Build variables
 // --------------------------------------------------------------------------------------
 let f projName =
-    let pattern = sprintf @"**\%s.fsproj" projName
+    let pattern = sprintf @"**/%s.fsproj" projName
     let xs = !! pattern
     xs
     |> Seq.tryExactlyOne
@@ -18,30 +19,63 @@ let f projName =
         |> failwithf "'%s' expected exactly one but:\n%A" pattern
     )
 let testProjName = "Test"
-let testProjPath = @"Test\Test.fsproj"
-let mainProjName = "URQLParser"
-let mainProjPath = f mainProjName
+let testProjPath = @"Test/Test.fsproj"
+let serverProjName = "UrqlServer"
+let parserProjName = "UrqlParser"
+let serverProjPath = f serverProjName
 // --------------------------------------------------------------------------------------
 // Helpers
 // --------------------------------------------------------------------------------------
 open Fake.DotNet
-let buildConf = DotNet.BuildConfiguration.Debug
+let buildConf = DotNet.BuildConfiguration.Release
 let dotnetSdk = lazy DotNet.install DotNet.Versions.FromGlobalJson
 let inline dtntSmpl arg = DotNet.Options.lift dotnetSdk.Value arg
+let targetFrameworks = ["net461"; "netcoreapp3.1"]
 // --------------------------------------------------------------------------------------
 // Targets
 // --------------------------------------------------------------------------------------
+let dotnetBuild =
+    DotNet.build (fun x ->
+        // Чтобы в Linux'е не компилировался net461, дан этот костыль:
+        { x with
+                Configuration = buildConf
+                Framework =
+                    if not Environment.isWindows then
+                        Some "netcoreapp3.1"
+                    else
+                        None
+                }
+        |> dtntSmpl)
+Target.create "BuildServer" (fun _ ->
+    serverProjPath
+    |> Fake.IO.Path.getDirectory
+    |> dotnetBuild
+)
+
 Target.create "BuildTest" (fun _ ->
     testProjPath
     |> Fake.IO.Path.getDirectory
-    |> DotNet.build (fun x ->
-        { x with Configuration = buildConf }
-        |> dtntSmpl)
+    |> dotnetBuild
+)
+Target.create "BuildUtility" (fun _ ->
+    utilityProjpath
+    |> Fake.IO.Path.getDirectory
+    |> dotnetBuild
 )
 
-let run projName projPath =
+Target.create "Copy3rd" <| fun _ ->
+    let srcDir = @"3rd"
+    if not <| System.IO.Directory.Exists srcDir then
+        failwithf "'%s' not found" srcDir
+    targetFrameworks
+    |> List.iter (fun targetFramework ->
+        let localPath = sprintf "bin/%A/%s" buildConf targetFramework
+        let dstDir = sprintf "%s/%s/%s" serverProjName localPath srcDir
+        Fake.IO.Shell.copyDir dstDir srcDir (fun _ -> true)
+    )
+let run projName targetFramework projPath =
     let dir = Fake.IO.Path.getDirectory projPath
-    let localpath = sprintf "bin/%A/net461/%s.exe" buildConf projName
+    let localpath = sprintf "bin/%A/%s/%s.exe" buildConf targetFramework projName
     let path = Fake.IO.Path.combine dir localpath
     if not <| Fake.IO.File.exists path then
         failwithf "not found %s" path
@@ -52,13 +86,10 @@ let run projName projPath =
     |> Proc.run
 
 Target.create "RunTest" (fun _ ->
-    let x = run testProjName testProjPath
+    let targetFramework = targetFrameworks.[0]
+    let x = run testProjName targetFramework testProjPath
     if x.ExitCode <> 0 then
-        raise <| Fake.Testing.Common.FailedTestsException "test error"
-)
-
-Target.create "RunMainProj" (fun _ ->
-    run mainProjName mainProjPath |> ignore
+        failwith "test error"
 )
 
 Target.create "TrimTrailingWhitespace" (fun _ ->
@@ -80,12 +111,26 @@ Target.create "TrimTrailingWhitespace" (fun _ ->
     )
 )
 
+Target.create "CopyToMainProj" (fun _ ->
+    let srcDir = sprintf @"UrqlServer/bin/%A" buildConf
+    let dstDir = @"e:/Project/Urql/UrqlVscodeExtension/release/bin"
+    Fake.IO.Shell.copyDir dstDir srcDir (fun _ -> true)
+)
+
 // --------------------------------------------------------------------------------------
 // Build order
 // --------------------------------------------------------------------------------------
 open Fake.Core.TargetOperators
 
+Target.create "Default" ignore
+
+"BuildServer"
+  ==> "Copy3rd"
+  ==> "Default"
+
 "BuildTest"
+  ==> "Copy3rd"
+  ==> "CopyToMainProj"
   ==> "RunTest"
-  ==> "RunMainProj"
-Target.runOrDefault "RunTest"
+
+Target.runOrDefault "Default"

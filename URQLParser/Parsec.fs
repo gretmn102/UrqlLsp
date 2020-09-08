@@ -7,10 +7,10 @@ open Qsp
 open Qsp.Ast
 open Qsp.Parser.Generic
 open Qsp.Parser.Expr
-open Qsp.Tokens
+
 
 let ppunctuationTerminator : _ Parser =
-    appendToken TokenType.KeywordControl (pchar '&')
+    appendToken Tokens.TokenType.PunctuationTerminatorStatement (pchar '&')
 
 let pImplicitVarWhenAssign p =
     applyRange p
@@ -20,16 +20,16 @@ let pImplicitVarWhenAssign p =
         |> Map.tryFind nameLower
         |> function
             | Some dscr ->
-                appendHover2 dscr range
+                appendHover2 (RawDescription dscr) range
             | None ->
                 if Map.containsKey nameLower Defines.procs then
                     appendSemanticError range "Нельзя переопределять процедуру"
-                elif Map.containsKey nameLower Defines.functions then
+                elif Map.containsKey nameLower Defines.functionsByName then
                     appendSemanticError range "Нельзя переопределять функцию"
                 else
                     let dscr = "Пользовательская глобальная переменная числового типа"
-                    appendHover2 dscr range
-        >>. appendToken2 TokenType.Variable range
+                    appendHover2 (RawDescription dscr) range
+        >>. appendToken2 Tokens.TokenType.Variable range
         >>. appendVarHighlight range (ImplicitNumericType, name) VarHighlightKind.WriteAccess
         >>. preturn name
 
@@ -39,42 +39,35 @@ let pAssign stmts =
             between (pchar '{' >>. spaces) (spaces >>. char_ws '}') stmts
             |>> fun stmts -> AssignCode(ass, stmts)
 
-        let call =
-            ident >>=?
-            fun name ->
-                followedBy (
-                    ident
-                    <|> (puint32 >>% "")
-                    <|> stringLiteral)
-                >>. sepBy1 pexpr (char_ws ',')
-                |>> fun args -> Assign(ass, Func(name, args)) // То есть `a = min x, y` можно, что ли? Хм...
-        let assexpr = call <|> (pexpr |>> fun defExpr -> Assign(ass, defExpr))
-
         let str_ws s =
-            appendToken TokenType.OperatorAssignment
+            appendToken Tokens.TokenType.OperatorAssignment
                 (pstring s)
             .>> ws
 
         choice [
             str_ws "-=" >>. pexpr |>> fun defExpr -> Assign(ass, Expr.Expr(Minus, Var name, defExpr))
-            str_ws "=-" >>. pexpr |>> fun defExpr -> Assign(ass, Expr.Expr(Minus, defExpr, Var name))
-            (str_ws "+=" <|> str_ws "=+") >>. pexpr |>> fun defExpr -> Assign(ass, Expr.Expr(Plus, Var name, defExpr))
-            str_ws "=" >>. (asscode <|> assexpr)
+            str_ws "/=" >>. pexpr |>> fun defExpr -> Assign(ass, Expr.Expr(Divide, Var name, defExpr))
+            str_ws "+=" >>. pexpr |>> fun defExpr -> Assign(ass, Expr.Expr(Plus, Var name, defExpr))
+            str_ws "*=" >>. pexpr |>> fun defExpr -> Assign(ass, Expr.Expr(Times, Var name, defExpr))
+            str_ws "=" >>. (asscode <|> (pexpr |>> fun defExpr -> Assign(ass, defExpr)))
         ]
 
     let assign name =
         let arr =
-            bet_ws '[' ']' (opt pexpr)
+            between
+                (appendToken Tokens.TokenType.BraceSquareOpened (pchar '[' .>> ws))
+                (appendToken Tokens.TokenType.BraceSquareClosed (pchar ']'))
+                (opt pexpr)
             |>> fun braketExpr ->
                 match braketExpr with
                 | Some braketExpr ->
                     AssignArr(name, braketExpr)
                 | None -> AssignArrAppend name
-        arr <|>% AssignVar name >>=? assdef name
+        (arr .>> ws) <|>% AssignVar name >>=? assdef name
     let pExplicitAssign =
         let p =
             appendToken
-                TokenType.Type
+                Tokens.TokenType.Type
                 ((pstringCI "set" <|> pstringCI "let") .>>? notFollowedVarCont)
             .>> ws
             >>. (pexplicitVar VarHighlightKind.WriteAccess <|> (pImplicitVarWhenAssign ident |>> fun name -> ImplicitNumericType, name))
@@ -96,7 +89,7 @@ let pcallProc =
                 |> Map.tryFind (String.toLower name)
                 |> function
                     | Some (dscr, sign) ->
-                        appendHover2 dscr range
+                        appendHover2 (RawDescription dscr) range
                         >>% Some sign
                     | None ->
                         [
@@ -106,7 +99,7 @@ let pcallProc =
                         |> String.concat "\n"
                         |> appendSemanticError range
                         >>% None
-            appendToken2 TokenType.Procedure range
+            appendToken2 Tokens.TokenType.Procedure range
             >>. p
             |>> fun sign -> name, range, sign
     let pProcWithAsterix: _ Parser =
@@ -125,8 +118,8 @@ let pcallProc =
         |> Seq.map (fun (KeyValue(name, (dscr, sign))) ->
             applyRange (pstringCI name .>>? notFollowedVarCont)
             >>= fun (range, name) ->
-                appendToken2 TokenType.Procedure range
-                >>. appendHover2 dscr range
+                appendToken2 Tokens.TokenType.Procedure range
+                >>. appendHover2 (RawDescription dscr) range
                 >>% (name, range, sign)
         )
         |> List.ofSeq
@@ -145,8 +138,8 @@ let pcallProc =
         >>= fun (range, name) ->
             match Map.tryFind (String.toLower name) Defines.procs with
             | Some (dscr, sign) ->
-                appendToken2 TokenType.Procedure range
-                >>. appendHover2 dscr range
+                appendToken2 Tokens.TokenType.Procedure range
+                >>. appendHover2 (RawDescription dscr) range
                 >>% (name, range, sign)
             | None -> failwithf "'%s' not found in predef procs" name
     pProcWithAsterix
@@ -162,7 +155,7 @@ let pcallProc =
     >>= fun ((name, range, sign), args) ->
         match sign with
         | None ->
-            preturn (CallSt(name, List.map snd args))
+            preturn (Proc(name, List.map snd args))
         | Some x ->
             let procNameLower = String.toLower name
             let pLoc =
@@ -210,7 +203,7 @@ let pcallProc =
                 | Some () ->
                     preturn ()
             >>. pLoc
-            >>% CallSt(name, List.map snd args)
+            >>% Proc(name, List.map snd args)
 
 let pcomment : _ Parser =
     let stringLiteralWithToken : _ Parser =
@@ -229,38 +222,38 @@ let pcomment : _ Parser =
                     x::xs |> String.concat "\n"
                     |> fun x -> sprintf "%c%s%c" openedChar x closedChar
                     )
-        bet TokenType.Comment '\'' '\''
-        <|> bet TokenType.Comment '"' '"'
+        bet Tokens.TokenType.Comment '\'' '\''
+        <|> bet Tokens.TokenType.Comment '"' '"'
     let p =
-        appendToken TokenType.Comment
+        appendToken Tokens.TokenType.Comment
             (many1Satisfy (fun c -> c <> '\n' && c <> ''' && c <> '"' && c <> '{'))
         <|> stringLiteralWithToken
-        <|> (pbraces TokenType.Comment |>> sprintf "{%s}")
-    appendToken TokenType.Comment (pchar '!')
+        <|> (pbraces Tokens.TokenType.Comment |>> sprintf "{%s}")
+    appendToken Tokens.TokenType.Comment (pchar '!')
     >>. manyStrings p |>> Statement.Comment
 
 let psign =
-    appendToken TokenType.LabelColon
+    appendToken Tokens.TokenType.LabelColon
         (pchar ':')
     >>. ws
-    >>. appendToken TokenType.NameLabel
+    >>. appendToken Tokens.TokenType.NameLabel
             (many1SatisfyL ((<>) '\n') "labelName") // TODO: literal? Trim trailing spaces
     |>> Label
-let genKeywordParser keyword =
+let genKeywordParser tokenType keyword =
     let dscr =
-        Qsp.Defines.keywords
+        Defines.keywords
         |> List.tryPick (fun (name, dscr) ->
             if name = keyword then Some dscr
             else None)
         |> Option.defaultWith (fun () -> failwithf "not found %s" keyword)
-    appendTokenHover TokenType.KeywordControl dscr
+    appendTokenHover tokenType (RawDescription dscr)
         (pstringCI keyword .>>? notFollowedVarCont)
 let pexit : _ Parser =
-    genKeywordParser "exit"
+    genKeywordParser Tokens.TokenType.Exit "exit"
     >>% Exit
 
 let pendKeyword : _ Parser =
-    genKeywordParser "end"
+    genKeywordParser Tokens.TokenType.End "end"
 let pstmts' pstmt =
     many
         (pstmt .>> spaces
@@ -270,7 +263,7 @@ let pstmts1' pstmt =
         (pstmt .>> spaces
          .>> (skipMany (ppunctuationTerminator .>> spaces)))
 let pstmt =
-    let pstmt, pstmtRef = createParserForwardedToRef<Statement, _>()
+    let pstmt, pstmtRef = createParserForwardedToRef<PosStatement, _>()
     let pInlineStmts =
         many (pstmt .>> ws .>> skipMany (ppunctuationTerminator .>> ws))
     let pInlineStmts1 =
@@ -278,11 +271,11 @@ let pstmt =
     let pstmts = pstmts' pstmt
 
     let pcolonKeyword : _ Parser =
-        appendToken TokenType.KeywordControl (pchar ':')
+        appendToken Tokens.TokenType.Colon (pchar ':')
 
     let pAct =
         let pactKeyword : _ Parser =
-            genKeywordParser "act"
+            genKeywordParser Tokens.TokenType.Act "act"
 
         let pactHeader = pactKeyword .>> ws >>. sepBy1 pexpr (char_ws ',') .>> pcolonKeyword
 
@@ -294,39 +287,38 @@ let pstmt =
                 Act(expr, body))
     let pFor =
         let pForHeader =
-            genKeywordParser "for" >>. ws
+            genKeywordParser Tokens.TokenType.For "for" >>. ws
             >>. (pexplicitVar VarHighlightKind.WriteAccess
                  <|> (pImplicitVarWhenAssign ident |>> fun name -> ImplicitNumericType, name))
-            .>> ws .>> appendToken TokenType.OperatorAssignment (pchar '=')
+            .>> ws .>> appendToken Tokens.TokenType.OperatorAssignment (pchar '=')
             .>> ws .>>. pexpr
-            .>> genKeywordParser "to"
+            .>> genKeywordParser Tokens.TokenType.To "to"
             .>> ws .>>. pexpr
+            .>>. opt (genKeywordParser Tokens.TokenType.Step "step"
+                      .>> ws >>. pexpr)
             .>> pcolonKeyword
 
         pipe2
             pForHeader
             ((ws >>? skipNewline >>. spaces >>. pstmts .>> pendKeyword)
               <|> (spaces >>. pInlineStmts .>> optional pendKeyword))
-            (fun ((var, fromExpr), toExpr) body ->
-                For(var, fromExpr, toExpr, body))
+            (fun (((var, fromExpr), toExpr), stepExpr) body ->
+                For(var, fromExpr, toExpr, stepExpr, body))
     let pIf =
         let pifKeyword : _ Parser =
-            genKeywordParser "if"
+            genKeywordParser Tokens.TokenType.If "if"
         let pelseifKeyword : _ Parser =
-            genKeywordParser "elseif"
+            genKeywordParser Tokens.TokenType.ElseIf "elseif"
         let pelseKeyword : _ Parser =
-            genKeywordParser "else"
+            genKeywordParser Tokens.TokenType.Else "else"
         let pifHeader = pifKeyword .>> ws >>. pexpr .>> pcolonKeyword
         let pelseifHeader = pelseifKeyword .>> ws >>. pexpr .>> pcolonKeyword
 
         let setIsEndOptionalTo boolean =
             updateUserState (fun x -> { x with IsEndOptional = boolean })
 
-        let p =
-            ws .>>? skipNewline >>. spaces >>. pstmts .>> setIsEndOptionalTo false
-            <|> (spaces >>. pInlineStmts .>> setIsEndOptionalTo true)
         let pElse1 =
-            pelseKeyword >>. ws
+            pelseKeyword .>> opt (skipChar ':') .>> ws
             >>. (pInlineStmts1 .>> opt pendKeyword
                  <|> (spaces >>. pstmts .>> pendKeyword))
         let pend =
@@ -338,12 +330,15 @@ let pstmt =
                     pendKeyword >>% ()
 
         let pelseIf =
-            many1 (pelseifHeader .>>. p)
+            let p =
+                ws .>>? skipNewline >>. spaces >>. pstmts .>> setIsEndOptionalTo false
+                <|> (spaces >>. pInlineStmts .>> setIsEndOptionalTo true)
+            many1 ((getPosition |>> (fparsecPosToPos >> NoEqualityPosition)) .>>.? pelseifHeader .>>. p)
             .>>. (pElse1 <|> (pend >>% []))
             |>> fun (elifs, elseBody) ->
                 let rec f = function
-                    | (expr, thenBody)::xs ->
-                        [If(expr, thenBody, f xs)]
+                    | ((pos, expr), thenBody)::xs ->
+                        [pos, If(expr, thenBody, f xs)]
                     | [] -> elseBody
                 f elifs
 
@@ -364,7 +359,7 @@ let pstmt =
              <|> (spaces >>. pstmts .>>. (pelseIf <|> pElse1 <|> (pendKeyword >>% [])))))
             (fun expr (thenBody, elseBody) ->
                 If(expr, thenBody, elseBody))
-    pstmtRef :=
+    let p =
         choice [
             pcomment
             pexit
@@ -375,22 +370,23 @@ let pstmt =
             pAssign pstmts
             pcallProc
             notFollowedBy (pchar '-' >>. ws >>. (skipNewline <|> skipChar '-' <|> eof)) // `-` завершает локацию
-            >>. (pexpr |>> StarPl)
+            >>. (pexpr |>> fun arg -> Proc("*pl", [arg]))
         ]
+    pstmtRef := (getPosition |>> (fparsecPosToPos >> NoEqualityPosition)) .>>.? p
     pstmt
 
 let pstmts = pstmts' pstmt
 let pstmts1 = pstmts1' pstmt
 
 let psharpKeyword : _ Parser =
-    appendToken TokenType.KeywordControl (pchar '#')
+    appendToken Tokens.TokenType.SharpBeginLoc (pchar '#')
 let pminusKeyword : _ Parser =
-    appendToken TokenType.KeywordControl (pchar '-') // хотя здесь больше подошел бы обычный `end`
+    appendToken Tokens.TokenType.MinusEndLoc (pchar '-') // хотя здесь больше подошел бы обычный `end`
 let ploc =
     let pendKeyword =
         applyRange (pstringCI "end" .>>? notFollowedVarCont)
         >>= fun (range, _) ->
-            appendToken2 TokenType.KeywordControl range
+            appendToken2 Tokens.TokenType.End range
             >>. appendSemanticError range "Лишний `end`"
     pipe2
         (psharpKeyword .>> ws
@@ -417,13 +413,13 @@ let ploc =
                         }
                     )
                 >>. appendLocHighlight r locNameLower VarHighlightKind.WriteAccess // и все равно добавить, даже в случае семантической ошибки? Хм, ¯\_(ツ)_/¯
-                >>. appendToken2 TokenType.StringQuotedSingle r
+                >>. appendToken2 Tokens.TokenType.StringQuotedSingle r
                 >>. preturn name
              )
          .>> spaces)
         (many (pstmts1 .>> many (pendKeyword .>> spaces)) |>> List.concat
          .>> (pminusKeyword .>> ws
-              .>> appendToken TokenType.Comment
+              .>> appendToken Tokens.TokenType.Comment
                     (skipManySatisfy ((<>) '\n'))))
         (fun name body -> Location(name, body))
 

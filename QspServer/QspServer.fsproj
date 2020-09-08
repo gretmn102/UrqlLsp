@@ -3,7 +3,7 @@
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <TargetFrameworks>netcoreapp3.1;net461</TargetFrameworks>
-    <AssemblyName>test</AssemblyName>
+    <AssemblyName>urqlserver</AssemblyName>
     <Optimize>true</Optimize>
     <Tailcalls>true</Tailcalls>
   </PropertyGroup>
@@ -11,19 +11,16 @@
     <ProjectReference Include="..\paket-files\github.com\gretmn102\FsharpMyExtension\FsharpMyExtension\FsharpMyExtension\FsharpMyExtension.fsproj">
       <Name>FsharpMyExtension.fsproj</Name>
     </ProjectReference>
-    <ProjectReference Include="..\QSParse\QSParse.fsproj">
-      <Name>QSParse.fsproj</Name>
-    </ProjectReference>
-    <ProjectReference Include="..\UrqlServer\UrqlServer.fsproj">
-      <Name>UrqlServer.fsproj</Name>
-    </ProjectReference>
-    <ProjectReference Include="..\Utility\Utility.fsproj">
-      <Name>Utility.fsproj</Name>
+    <ProjectReference Include="..\UrqlParse\UrqlParse.fsproj">
+      <Name>UrqlParse.fsproj</Name>
     </ProjectReference>
   </ItemGroup>
   <ItemGroup>
-    <None Include="App.config" />
-    <Compile Include="Test.fs" />
+    <Compile Include="..\paket-files\gretmn102\LSP-API\src\LanguageServerProtocol.fs">
+      <Paket>True</Paket>
+      <Link>paket-files/LanguageServerProtocol.fs</Link>
+    </Compile>
+    <Compile Include="Program.fs" />
   </ItemGroup>
   <Import Project="..\.paket\Paket.Restore.targets" />
 </Project>
