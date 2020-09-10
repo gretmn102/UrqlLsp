@@ -170,6 +170,7 @@ let (|OneStmt|_|) = function
         // | StarPl(Val (String _)) -> None
         | Proc(name, _) when name.ToLower() = "*pl" -> None // Как правило, строки очень длинные, потому пусть лучше будет так
         | Goto _ | Assign _ | Proc _ | Comment _ -> Some (pos, x)
+        | End -> None
         | BlockComment _ -> Some(pos, x)
         | Pln _ -> None
         | AssignCode _ -> None // спорно
@@ -313,7 +314,7 @@ let showStmt indentsOption (formatConfig:FormatConfig) =
                             (f' >> List.map ((<<) tabs))
                     yield showString "end"
             ]
-        | Comment s -> [showChar '!' << showString s]
+        | Comment s -> [showChar ';' << showString s]
         | AssignCode(ass, stmts) ->
             let header = showAssign ass << spaceBetween (showChar '=') << showChar '{'
             [
@@ -332,6 +333,7 @@ let showStmt indentsOption (formatConfig:FormatConfig) =
         | Pln str -> [showString "pln" << showSpace << showString str ]
         | Goto lab -> [showString "goto" << showSpace << showString lab ]
         | BlockComment str -> [showString "/*" << showString str << showString "*/"]
+        | End -> [showString "end"]
     f'
 
 let showLoc indentsOption isSplitStringPl (Location(name, statements)) : ShowS list =

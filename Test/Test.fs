@@ -23,12 +23,12 @@ let plnOutsideTest =
     testList "plnOutside" [
         testCase "pln text & after" (fun _ ->
             let exp = Pln "text"
-            let st, act = runStateEither plnOutside Generic.emptyState "pln text & after"
+            let st, act = runStateEither (plnOutside textOutside) Generic.emptyState "pln text & after"
             Assert.Equal("", Right exp, act)
         )
         testCase "testCase2" (fun _ ->
             let exp = Pln "text"
-            let st, act = runStateEither plnOutside Generic.emptyState "pln text\n"
+            let st, act = runStateEither (plnOutside textOutside) Generic.emptyState "pln text\n"
             Assert.Equal("", Right exp, act)
         )
         testCase "testCase3" (fun _ ->

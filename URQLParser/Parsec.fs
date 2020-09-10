@@ -87,11 +87,24 @@ let textOutside: _ Parser =
              <|> (ws1Take .>>? notFollowedBy (satisfy (isAnyOf "\n&;")))
              <|> (pstring "/" .>>? notFollowedByString "*")
             ))
+let textInside: _ Parser =
+    appendToken Tokens.Text
+        (manyStrings
+            (choice [
+                many1Satisfy (isNoneOf " \n&;/eE")
+                ws1Take .>>? notFollowedBy (satisfy (isAnyOf "\n&;"))
+                pstring "/" .>>? notFollowedByString "*"
+                ((satisfy (isAnyOf "eE") |>> string)
+                  .>>? notFollowedBy
+                        (pstringCI "lse"
+                         .>> (skipSatisfy (not << isIdentifierChar) <|> eof))
+                 )
+            ]))
 
-let plnOutside: _ Parser =
+let plnOutside textOutside: _ Parser =
     pstringCI "pln" >>. ws >>. textOutside
     |>> Pln
-let gotoOutside: _ Parser =
+let gotoOutside textOutside: _ Parser =
     pstringCI "goto"
     >>. ws >>. applyRange textOutside
     >>= fun (r, locName) ->
@@ -235,15 +248,17 @@ let pcallProc =
     //         >>% Proc(name, List.map snd args)
 
     choice [
-        plnOutside
-        gotoOutside
+        plnOutside textInside
+        gotoOutside textInside
     ]
 let blockComment : _ Parser =
     pstring "/*"
-    >>. appendToken Tokens.Comment
-            (manyStrings
-                (many1Satisfy ((<>) '*')
-                 <|> (pstring "*" .>>? notFollowedByString "/")))
+    >>. manyStrings
+            (appendToken Tokens.Comment
+                (many1Strings
+                    (many1Satisfy (isNoneOf "*\n")
+                     <|> (pstring "*" .>>? notFollowedByString "/")))
+            <|> newlineReturn "\n")
     .>> pstring "*/"
     |>> BlockComment
 let inlineComment : _ Parser =
