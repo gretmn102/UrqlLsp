@@ -1,5 +1,13 @@
 open Fuchu
 open FsharpMyExtension
+open FsharpMyExtension.Either
+open FParsec
+open Qsp
+open Qsp.Ast
+open Qsp.Parser
+open Qsp.Parser.Generic
+open Qsp.Parser.Main
+
 
 [<Tests>]
 let simpleTest =
@@ -11,17 +19,17 @@ let simpleTest =
 // run simpleTest // <- если нужно запустить тест вручную
 
 [<Tests>]
-let simpleTestList =
-    testList "testListName" [
-        testCase "testCase1" (fun _ ->
-            let exp = true
-            let act = true
-            Assert.Equal("msg1", exp, act)
+let plnOutsideTest =
+    testList "plnOutside" [
+        testCase "pln text & after" (fun _ ->
+            let exp = Pln "text"
+            let st, act = runStateEither plnOutside Generic.emptyState "pln text & after"
+            Assert.Equal("", Right exp, act)
         )
         testCase "testCase2" (fun _ ->
-            let exp = 1
-            let act = 1
-            Assert.Equal("msg2", exp, act)
+            let exp = Pln "text"
+            let st, act = runStateEither plnOutside Generic.emptyState "pln text\n"
+            Assert.Equal("", Right exp, act)
         )
         testCase "testCase3" (fun _ ->
             let exp = ()

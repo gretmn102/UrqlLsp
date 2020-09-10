@@ -80,6 +80,35 @@ let pAssign stmts =
             assign (ImplicitNumericType, name)
     pExplicitAssign <|> pImlicitAssign
 
+let textOutside: _ Parser =
+    appendToken Tokens.Text
+        (manyStrings
+            (many1Satisfy (isNoneOf " \n&;/")
+             <|> (ws1Take .>>? notFollowedBy (satisfy (isAnyOf "\n&;")))
+             <|> (pstring "/" .>>? notFollowedByString "*")
+            ))
+
+let plnOutside: _ Parser =
+    pstringCI "pln" >>. ws >>. textOutside
+    |>> Pln
+let gotoOutside: _ Parser =
+    pstringCI "goto"
+    >>. ws >>. applyRange textOutside
+    >>= fun (r, locName) ->
+        let locNameLower = String.toLower locName
+        appendLocHighlight r locNameLower VarHighlightKind.ReadAccess
+        >>. pGetDefLocPos locNameLower
+            >>= function
+                | None ->
+                    updateUserState (fun st ->
+                        { st with
+                            NotDefinedLocs =
+                                st.NotDefinedLocs
+                                |> Map.addOrMod locNameLower [r] (fun xs -> r::xs)
+                        }
+                    )
+                | Some _ -> preturn ()
+        >>% Goto locName
 let pcallProc =
     let f defines p =
         applyRange p
@@ -142,103 +171,87 @@ let pcallProc =
                 >>. appendHover2 (RawDescription dscr) range
                 >>% (name, range, sign)
             | None -> failwithf "'%s' not found in predef procs" name
-    pProcWithAsterix
-    .>> ws .>>. sepBy (applyRange pexpr) (char_ws ',') // Кстати, `,` — "punctuation.separator.parameter.js"
-    <|> (adhoc <|> pDefProc .>> ws
-         .>>. (followedBy (skipNewline <|> skipChar '&' <|> eof) >>% []
-               <|> bet_ws '(' ')' (sepBy (applyRange pexpr) (pchar ',' >>. ws))
-               <|> sepBy1 (applyRange pexpr) (char_ws ','))
-         |>> fun ((name, range, sign), args) -> ((name, range, Some sign), args))
-    <|> (procHoverAndToken
-         .>>? (ws1 <|> followedBy (satisfy (isAnyOf "'\"")))
-         .>>.? sepBy1 (applyRange pexpr) (char_ws ','))
-    >>= fun ((name, range, sign), args) ->
-        match sign with
-        | None ->
-            preturn (Proc(name, List.map snd args))
-        | Some x ->
-            let procNameLower = String.toLower name
-            let pLoc =
-                if Set.contains procNameLower Defines.transferOperatorsSet then
-                    match args with
-                    | (r, Val (String [[StringKind locName]]))::_ ->
-                        getUserState
-                        >>= fun (x:State) ->
-                        let nested =
-                            if x.SingleQuotNestedCount > x.DoubleQuotNestedCount then // TODO: ничего хорошего из этого не получится
-                                x.SingleQuotNestedCount
-                            else
-                                x.DoubleQuotNestedCount
-                            |> (+) 1
-                        let r =
-                            { r with
-                                Column1 = r.Column1 + int64 nested // чтобы `'` или `"` пропустить
-                                Column2 = r.Column2 - int64 nested
-                            }
-                        let locNameLower = String.toLower locName
-                        appendLocHighlight r locNameLower VarHighlightKind.ReadAccess
-                        >>. pGetDefLocPos locNameLower
-                            >>= function
-                                | None ->
-                                    updateUserState (fun st ->
-                                        { st with
-                                            NotDefinedLocs =
-                                                st.NotDefinedLocs
-                                                |> Map.addOrMod locNameLower [r] (fun xs -> r::xs)
-                                        }
-                                    )
-                                | Some _ -> preturn ()
-                    | _ -> preturn ()
-                else
-                    preturn ()
-            args
-            |> Array.ofList
-            |> Defines.getFuncByOverloadType x
-            |> function
-                | None ->
-                    let msg =
-                        Defines.Show.printSignature name x
-                        |> sprintf "Ожидается одна из перегрузок:\n%s"
-                    appendSemanticError range msg
-                | Some () ->
-                    preturn ()
-            >>. pLoc
-            >>% Proc(name, List.map snd args)
+    // pProcWithAsterix
+    // .>> ws .>>. sepBy (applyRange pexpr) (char_ws ',') // Кстати, `,` — "punctuation.separator.parameter.js"
+    // <|> (adhoc <|> pDefProc .>> ws
+    //      .>>. (followedBy (skipNewline <|> skipChar '&' <|> eof) >>% []
+    //            <|> bet_ws '(' ')' (sepBy (applyRange pexpr) (pchar ',' >>. ws))
+    //            <|> sepBy1 (applyRange pexpr) (char_ws ','))
+    //      |>> fun ((name, range, sign), args) -> ((name, range, Some sign), args))
+    // <|> (procHoverAndToken
+    //      .>>? (ws1 <|> followedBy (satisfy (isAnyOf "'\"")))
+    //      .>>.? sepBy1 (applyRange pexpr) (char_ws ','))
+    // >>= fun ((name, range, sign), args) ->
+    //     match sign with
+    //     | None ->
+    //         preturn (Proc(name, List.map snd args))
+    //     | Some x ->
+    //         let procNameLower = String.toLower name
+    //         let pLoc =
+    //             if Set.contains procNameLower Defines.transferOperatorsSet then
+    //                 match args with
+    //                 | (r, Val (String [[StringKind locName]]))::_ ->
+    //                     getUserState
+    //                     >>= fun (x:State) ->
+    //                     let nested =
+    //                         if x.SingleQuotNestedCount > x.DoubleQuotNestedCount then // TODO: ничего хорошего из этого не получится
+    //                             x.SingleQuotNestedCount
+    //                         else
+    //                             x.DoubleQuotNestedCount
+    //                         |> (+) 1
+    //                     let r =
+    //                         { r with
+    //                             Column1 = r.Column1 + int64 nested // чтобы `'` или `"` пропустить
+    //                             Column2 = r.Column2 - int64 nested
+    //                         }
+    //                     let locNameLower = String.toLower locName
+    //                     appendLocHighlight r locNameLower VarHighlightKind.ReadAccess
+    //                     >>. pGetDefLocPos locNameLower
+    //                         >>= function
+    //                             | None ->
+    //                                 updateUserState (fun st ->
+    //                                     { st with
+    //                                         NotDefinedLocs =
+    //                                             st.NotDefinedLocs
+    //                                             |> Map.addOrMod locNameLower [r] (fun xs -> r::xs)
+    //                                     }
+    //                                 )
+    //                             | Some _ -> preturn ()
+    //                 | _ -> preturn ()
+    //             else
+    //                 preturn ()
+    //         args
+    //         |> Array.ofList
+    //         |> Defines.getFuncByOverloadType x
+    //         |> function
+    //             | None ->
+    //                 let msg =
+    //                     Defines.Show.printSignature name x
+    //                     |> sprintf "Ожидается одна из перегрузок:\n%s"
+    //                 appendSemanticError range msg
+    //             | Some () ->
+    //                 preturn ()
+    //         >>. pLoc
+    //         >>% Proc(name, List.map snd args)
 
-let pcomment : _ Parser =
-    let stringLiteralWithToken : _ Parser =
-        let bet tokenType openedChar closedChar =
-            let p =
-                many1Satisfy (fun c' -> not (c' = closedChar || c' = '\n'))
-                <|> (attempt(skipChar closedChar >>. skipChar closedChar)
-                      >>% string closedChar + string closedChar)
-            pipe2
-                (appendToken tokenType (pchar openedChar)
-                 >>. appendToken tokenType (manyStrings p))
-                (many
-                    (newline >>. appendToken tokenType (manyStrings p))
-                 .>> appendToken tokenType (pchar closedChar)) // TODO: Здесь самое то использовать `PunctuationDefinitionStringEnd`
-                (fun x xs ->
-                    x::xs |> String.concat "\n"
-                    |> fun x -> sprintf "%c%s%c" openedChar x closedChar
-                    )
-        bet Tokens.TokenType.Comment '\'' '\''
-        <|> bet Tokens.TokenType.Comment '"' '"'
-    let p =
-        appendToken Tokens.TokenType.Comment
-            (many1Satisfy (fun c -> c <> '\n' && c <> ''' && c <> '"' && c <> '{'))
-        <|> stringLiteralWithToken
-        <|> (pbraces Tokens.TokenType.Comment |>> sprintf "{%s}")
-    appendToken Tokens.TokenType.Comment (pchar '!')
-    >>. manyStrings p |>> Statement.Comment
+    choice [
+        plnOutside
+        gotoOutside
+    ]
+let blockComment : _ Parser =
+    pstring "/*"
+    >>. appendToken Tokens.Comment
+            (manyStrings
+                (many1Satisfy ((<>) '*')
+                 <|> (pstring "*" .>>? notFollowedByString "/")))
+    .>> pstring "*/"
+    |>> BlockComment
+let inlineComment : _ Parser =
+    pchar ';'
+    >>. appendToken Tokens.Comment
+            (manySatisfy ((<>) '\n'))
+    |>> Comment
 
-let psign =
-    appendToken Tokens.TokenType.LabelColon
-        (pchar ':')
-    >>. ws
-    >>. appendToken Tokens.TokenType.NameLabel
-            (many1SatisfyL ((<>) '\n') "labelName") // TODO: literal? Trim trailing spaces
-    |>> Label
 let genKeywordParser tokenType keyword =
     let dscr =
         Defines.keywords
@@ -248,12 +261,10 @@ let genKeywordParser tokenType keyword =
         |> Option.defaultWith (fun () -> failwithf "not found %s" keyword)
     appendTokenHover tokenType (RawDescription dscr)
         (pstringCI keyword .>>? notFollowedVarCont)
-let pexit : _ Parser =
-    genKeywordParser Tokens.TokenType.Exit "exit"
-    >>% Exit
 
 let pendKeyword : _ Parser =
     genKeywordParser Tokens.TokenType.End "end"
+
 let pstmts' pstmt =
     many
         (pstmt .>> spaces
@@ -271,39 +282,8 @@ let pstmt =
     let pstmts = pstmts' pstmt
 
     let pcolonKeyword : _ Parser =
-        appendToken Tokens.TokenType.Colon (pchar ':')
+        genKeywordParser Tokens.TokenType.Then "then"
 
-    let pAct =
-        let pactKeyword : _ Parser =
-            genKeywordParser Tokens.TokenType.Act "act"
-
-        let pactHeader = pactKeyword .>> ws >>. sepBy1 pexpr (char_ws ',') .>> pcolonKeyword
-
-        pipe2
-            pactHeader
-            ((ws >>? skipNewline >>. spaces >>. pstmts .>> pendKeyword)
-              <|> (spaces >>. pInlineStmts .>> optional pendKeyword))
-            (fun expr body ->
-                Act(expr, body))
-    let pFor =
-        let pForHeader =
-            genKeywordParser Tokens.TokenType.For "for" >>. ws
-            >>. (pexplicitVar VarHighlightKind.WriteAccess
-                 <|> (pImplicitVarWhenAssign ident |>> fun name -> ImplicitNumericType, name))
-            .>> ws .>> appendToken Tokens.TokenType.OperatorAssignment (pchar '=')
-            .>> ws .>>. pexpr
-            .>> genKeywordParser Tokens.TokenType.To "to"
-            .>> ws .>>. pexpr
-            .>>. opt (genKeywordParser Tokens.TokenType.Step "step"
-                      .>> ws >>. pexpr)
-            .>> pcolonKeyword
-
-        pipe2
-            pForHeader
-            ((ws >>? skipNewline >>. spaces >>. pstmts .>> pendKeyword)
-              <|> (spaces >>. pInlineStmts .>> optional pendKeyword))
-            (fun (((var, fromExpr), toExpr), stepExpr) body ->
-                For(var, fromExpr, toExpr, stepExpr, body))
     let pIf =
         let pifKeyword : _ Parser =
             genKeywordParser Tokens.TokenType.If "if"
@@ -318,7 +298,7 @@ let pstmt =
             updateUserState (fun x -> { x with IsEndOptional = boolean })
 
         let pElse1 =
-            pelseKeyword .>> opt (skipChar ':') .>> ws
+            pelseKeyword .>> ws
             >>. (pInlineStmts1 .>> opt pendKeyword
                  <|> (spaces >>. pstmts .>> pendKeyword))
         let pend =
@@ -361,16 +341,14 @@ let pstmt =
                 If(expr, thenBody, elseBody))
     let p =
         choice [
-            pcomment
-            pexit
-            psign
+            blockComment
+            inlineComment
+            pendKeyword >>% End
             pIf
-            pAct
-            pFor
             pAssign pstmts
             pcallProc
-            notFollowedBy (pchar '-' >>. ws >>. (skipNewline <|> skipChar '-' <|> eof)) // `-` завершает локацию
-            >>. (pexpr |>> fun arg -> Proc("*pl", [arg]))
+            // notFollowedBy (pchar '-' >>. ws >>. (skipNewline <|> skipChar '-' <|> eof)) // `-` завершает локацию
+            // >>. (pexpr |>> fun arg -> Proc("*pl", [arg]))
         ]
     pstmtRef := (getPosition |>> (fparsecPosToPos >> NoEqualityPosition)) .>>.? p
     pstmt
@@ -379,15 +357,10 @@ let pstmts = pstmts' pstmt
 let pstmts1 = pstmts1' pstmt
 
 let psharpKeyword : _ Parser =
-    appendToken Tokens.TokenType.SharpBeginLoc (pchar '#')
-let pminusKeyword : _ Parser =
-    appendToken Tokens.TokenType.MinusEndLoc (pchar '-') // хотя здесь больше подошел бы обычный `end`
+    appendToken Tokens.TokenType.SharpBeginLoc (pchar ':')
+
+
 let ploc =
-    let pendKeyword =
-        applyRange (pstringCI "end" .>>? notFollowedVarCont)
-        >>= fun (range, _) ->
-            appendToken2 Tokens.TokenType.End range
-            >>. appendSemanticError range "Лишний `end`"
     pipe2
         (psharpKeyword .>> ws
          >>. (applyRange
@@ -417,10 +390,9 @@ let ploc =
                 >>. preturn name
              )
          .>> spaces)
-        (many (pstmts1 .>> many (pendKeyword .>> spaces)) |>> List.concat
-         .>> (pminusKeyword .>> ws
-              .>> appendToken Tokens.TokenType.Comment
-                    (skipManySatisfy ((<>) '\n'))))
+        // (many (pstmts1 .>> many (pendKeyword .>> spaces)) |>> List.concat
+        (many (pstmts1 .>> spaces) |>> List.concat
+        )
         (fun name body -> Location(name, body))
 
 let pAfterAll =

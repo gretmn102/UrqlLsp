@@ -169,7 +169,9 @@ let (|OneStmt|_|) = function
         match x with
         // | StarPl(Val (String _)) -> None
         | Proc(name, _) when name.ToLower() = "*pl" -> None // Как правило, строки очень длинные, потому пусть лучше будет так
-        | Assign _ | Proc _ | Comment _ -> Some (pos, x)
+        | Goto _ | Assign _ | Proc _ | Comment _ -> Some (pos, x)
+        | BlockComment _ -> Some(pos, x)
+        | Pln _ -> None
         | AssignCode _ -> None // спорно
         | Act _ | If _ -> None
         | Label _ -> None // эту нечисть нужно как можно более нагляднее подчеркнуть. Да странно будет, если она окажется одна в списке инструкций.
@@ -234,7 +236,7 @@ let showStmt indentsOption (formatConfig:FormatConfig) =
             [ showString name << args ]
         | Label s -> [showChar ':' << showString s]
         | If(e, thenBody, elseBody) ->
-            let ifHeader e = showString "if" << showSpace << showExpr e << showChar ':'
+            let ifHeader e = showString "if" << showSpace << showExpr e << showSpace << showString "then"
             [
                 match thenBody, elseBody with
                 | OneStmt x, OneStmt y ->
@@ -249,7 +251,7 @@ let showStmt indentsOption (formatConfig:FormatConfig) =
                     let rec body : _ -> ShowS list = function
                         | [pos, If(e, thenBody, elseBody)] ->
                             [
-                                yield showString "elseif" << showSpace << showExpr e << showChar ':'
+                                yield showString "elseif" << showSpace << showExpr e << showSpace << showString "then"
                                 yield! thenBody
                                        |> List.collect
                                            (f' >> List.map ((<<) tabs))
@@ -327,13 +329,15 @@ let showStmt indentsOption (formatConfig:FormatConfig) =
             ]
 
         | Exit -> [showString "exit"]
+        | Pln str -> [showString "pln" << showSpace << showString str ]
+        | Goto lab -> [showString "goto" << showSpace << showString lab ]
+        | BlockComment str -> [showString "/*" << showString str << showString "*/"]
     f'
 
 let showLoc indentsOption isSplitStringPl (Location(name, statements)) : ShowS list =
     [
-        yield showString "# " << showString name
+        yield showString ": " << showString name
         yield! List.collect (showStmt indentsOption isSplitStringPl) statements
-        yield showString (sprintf "--- %s ----------" name)
     ]
 
 let printLocs indentsOption isSplitStringPl xs =

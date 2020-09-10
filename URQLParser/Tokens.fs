@@ -6,6 +6,7 @@ type Range = FParsec.Position * FParsec.Position
 type TokenType =
     | If
     | ElseIf
+    | Then
     | Else
     | Act
     | Colon
@@ -59,6 +60,9 @@ type TokenType =
     | StringQuotedDouble
     | StringQuotedSingle
     | StringBraced
+
+    /// for `p` or `pln`
+    | Text
     // | ConstantCharacterEscape
     /// `entity.name.label.cs`
     | NameLabel

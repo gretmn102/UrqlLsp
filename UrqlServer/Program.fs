@@ -71,6 +71,7 @@ module CommandResponse =
             | Keyword -> "keyword"
             | Comment -> "comment"
             | Function -> "function"
+            | Then
             | If
             | ElseIf
             | Else
@@ -114,6 +115,7 @@ module CommandResponse =
                 | Ast.UnarOp.Neg -> "operatorArithmetic"
             | OperatorAssignment -> "operatorAssignment"
             | PunctuationTerminatorStatement -> "punctuationTerminatorStatement"
+            | Text
             | StringQuotedSingle
             | StringQuotedDouble
             | StringBraced -> "string"
@@ -276,7 +278,7 @@ type BackgroundServiceServer(state: State, client: FsacClient) =
                     Range = range
                     Severity = Some (DiagnosticSeverity.Error)
                     Code = None
-                    Source = "qsp"
+                    Source = "urql"
                     Message = sprintf "unknown '%s'" word
                     RelatedInformation = None
                     Tags = None
@@ -398,7 +400,7 @@ type BackgroundServiceServer(state: State, client: FsacClient) =
         // Вот что, этот негодяй одновременно открывает целую кучу всего: здесь и git, и обычный файл, и даже output. Надо бы как-то за всем этим уследить.
         // "git:/e%3A/Project/Qsp/QspSyntax/sample-code/Sandbox.qsps?%7B%22path%22%3A%22e%3A%5C%5CProject%5C%5CQsp%5C%5CQspSyntax%5C%5Csample-code%5C%5CSandbox.qsps%22%2C%22ref%22%3A%22~%22%7D"
         // p.TextDocument
-        if p.TextDocument.LanguageId = "qsp" && isValidDoc p.TextDocument.Uri then
+        if p.TextDocument.LanguageId = "urql" && isValidDoc p.TextDocument.Uri then
             currentDocument <- Some p.TextDocument
             // documentUri <- p.TextDocument.Uri
             // documentVersion <- Some p.TextDocument.Version
@@ -932,8 +934,8 @@ let main argv =
         defaultRequestHandlings<BackgroundServiceServer>()
         |> Map.add "fsharp/highlighting" (requestHandling (fun s p -> s.GetHighlighting(p) ))
         |> Map.add "fsharp/workspaceLoad" (requestHandling (fun s p -> s.FSharpWorkspaceLoad(p) ))
-        |> Map.add "qsp/build" (requestHandling (fun s p -> s.BuildSource p false ))
-        |> Map.add "qsp/buildAndRun" (requestHandling (fun s p -> s.BuildSource p true ))
+        |> Map.add "urql/build" (requestHandling (fun s p -> s.BuildSource p false ))
+        |> Map.add "urql/buildAndRun" (requestHandling (fun s p -> s.BuildSource p true ))
 
     Server.start requestsHandlings input output FsacClient (fun lspClient -> BackgroundServiceServer((), lspClient))
     |> printfn "%A"

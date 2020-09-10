@@ -177,6 +177,8 @@ and AssignWhat =
     | AssignArrAppend of var:Var
 and PosStatement = NoEqualityPosition * Statement
 and Statement =
+    | Pln of string
+    | Goto of string
     | Assign of AssignWhat * Expr
     | AssignCode of AssignWhat * PosStatement list
     | Proc of string * Expr list
@@ -184,8 +186,10 @@ and Statement =
     | Act of Expr list * PosStatement list
     | For of var:Var * from:Expr * to':Expr * step:Expr option * body:PosStatement list
     | Label of string
+    | BlockComment of string
     | Comment of string
     | Exit
+    | End
 type LocationName = string
 /// ```qsp
 /// # location name

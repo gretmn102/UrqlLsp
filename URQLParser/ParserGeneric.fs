@@ -30,6 +30,13 @@ let ws1<'UserState> =
     skipMany1SatisfyL (fun c -> System.Char.IsWhiteSpace c && c <> '\n') "any white space except '\\n'"
     : Parser<_, 'UserState>
 
+let wsTake<'UserState> =
+    manySatisfy (fun c -> System.Char.IsWhiteSpace c && c <> '\n')
+    : Parser<_, 'UserState>
+let ws1Take<'UserState> =
+    many1SatisfyL (fun c -> System.Char.IsWhiteSpace c && c <> '\n') "any white space except '\\n'"
+    : Parser<_, 'UserState>
+
 let char_ws c = pchar c .>> ws
 let bet opened closed = between <| char_ws opened <| pchar closed
 let bet_ws opened closed p = bet opened closed p .>> ws
