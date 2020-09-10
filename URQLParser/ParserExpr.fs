@@ -273,20 +273,15 @@ let pExprNew : _ Parser =
             ((pchar '*' (TokenType.BinaryOperator Times) >>% Times
               <|> (pchar '/' (TokenType.BinaryOperator Divide) >>% Divide))
              .>> ws |>> fun op e1 e2 -> Expr(op, e1, e2))
-    let pMod =
-        chainl1 (pProd .>> ws)
-            ((pstringCI "mod" (TokenType.BinaryOperator Mod) >>? notFollowedVarCont >>. ws >>% Mod)
-             .>> ws |>> fun op e1 e2 -> Expr(op, e1, e2))
     let pSum =
-        chainl1 (pMod .>> ws)
+        chainl1 (pProd .>> ws)
             ((pchar '+' (TokenType.BinaryOperator Plus) >>% Plus
               <|> (pchar '-' (TokenType.BinaryOperator Minus) >>% Minus))
              .>> ws |>> fun op e1 e2 -> Expr(op, e1, e2))
     let pCompare pNo =
         chainl1 (pNo <|> pSum .>> ws)
             (choice [
-                pstring "=>" (TokenType.BinaryOperator Eg) >>% Eg
-                pstring "=<" (TokenType.BinaryOperator El) >>% El
+                pstring "==" (TokenType.BinaryOperator Similar) >>% Similar
                 pchar '=' (TokenType.BinaryOperator Eq) >>% Eq
 
                 pstring "<>" (TokenType.BinaryOperator Ne) >>% Ne
@@ -295,24 +290,16 @@ let pExprNew : _ Parser =
 
                 pstring ">=" (TokenType.BinaryOperator Ge) >>% Ge
                 pchar '>' (TokenType.BinaryOperator Gt) .>>? notFollowedBy (FParsec.CharParsers.pchar '>') >>% Gt // чтобы исключить `>>`
-
-                pchar '!' (TokenType.BinaryOperator Bang) >>% Bang
              ]
              .>> ws |>> fun op e1 e2 -> Expr(op, e1, e2))
-    let pObj pNo =
-        let pObj =
-            pstringCI "obj" TokenType.Procedure .>>? notFollowedVarCont >>% Obj
-            <|> (pstringCI "loc" TokenType.Procedure .>>? notFollowedVarCont >>% Loc)
-            .>> ws .>>. pCompare pNo
-            |>> fun (op, e1) -> UnarExpr(op, e1)
-        pObj <|> pCompare pNo .>> ws
+
     let pNo =
         // TODO: `no` — ассоциативный оператор, потому допустимо такое: `no (no -1)`
         let pNo, pNoRef = createParserForwardedToRef()
         pNoRef :=
-            pstringCI "no" TokenType.Procedure >>? notFollowedVarCont >>. ws >>. pObj pNo
+            pstringCI "no" TokenType.Procedure >>? notFollowedVarCont >>. ws >>. pNo
             |>> fun e1 -> UnarExpr(No, e1)
-        pNo <|> pObj pNo .>> ws
+        pNo <|> pCompare pNo .>> ws
     let pAnd =
         chainl1 (pNo .>> ws)
             ((pstringCI "and" TokenType.Procedure >>? notFollowedVarCont >>. ws >>% And)

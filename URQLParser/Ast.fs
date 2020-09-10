@@ -30,9 +30,9 @@ type Op =
     | Times
     /// `/`
     | Divide
-    /// `mod`
-    | Mod
 
+    /// `==`
+    | Similar
     /// `=`
     | Eq
     /// `>`
@@ -43,14 +43,9 @@ type Op =
     | Lt
     /// `&lt;=`
     | Le
-    /// `!` — то же самое, что и `&lt;>`
-    | Bang
     /// `&lt;>`
     | Ne
-    /// `=&lt;`
-    | El
-    /// `=>`
-    | Eg
+
     /// `and`
     | And
     /// `or`
@@ -63,20 +58,17 @@ module Op =
     let toString = function
         | Times -> "*"
         | Divide -> "/"
-        | Mod -> "mod"
         | Plus -> "+"
         | Minus -> "-"
         | Lt -> "<"
         | Gt -> ">"
         | Le -> "<="
-        | Eg -> "=>"
         | Ge -> ">="
-        | El -> "=<"
         | Ne -> "<>"
         | And -> "and"
         | Or -> "or"
         | Eq -> "="
-        | Bang -> "!"
+        | Similar -> "=="
 
     let ops =
         Reflection.Reflection.unionEnum<Op>
@@ -94,17 +86,14 @@ module Op =
 type UnarOp =
     /// `-`
     | Neg
-    /// `obj`
-    | Obj
     /// `no`
     | No
-    /// `loc`
-    | Loc
+
 [<CompilationRepresentation(CompilationRepresentationFlags.ModuleSuffix)>]
 [<RequireQualifiedAccess>]
 module UnarOp =
     [<ReflectedDefinition>]
-    let toString = function | Obj -> "obj" | Neg -> "-" | No -> "no" | Loc -> "loc"
+    let toString = function Neg -> "-" | No -> "no"
     let ops =
         Reflection.Reflection.unionEnum<UnarOp>
         |> Array.map (fun x -> x, toString x)
@@ -113,25 +102,14 @@ module UnarOp =
         fun x -> match Map.tryFind x m with Some x -> x | None -> failwithf "not found %A" x
 module Precedences =
     type T = OpB of Op | PrefB of UnarOp
-    // &
-    // OR
-    // AND
-    // OBJ, NO
-    // =, <, >, !, <>, <=, >=, =<, =>
-    // +, -
-    // MOD
-    // *, /
-    // +, - (унарные)
 
     let prec = function
         | OpB Or -> 1
         | OpB And -> 2
         | PrefB No -> 3
-        | PrefB Loc | PrefB Obj -> 4 // `no obj 'apple'` equal `no (obj 'apple')`
-        // =     | <      | >      | !        | <>     | <=     | >=     | =>     | =<
-        | OpB Eq | OpB Lt | OpB Gt | OpB Bang | OpB Ne | OpB Le | OpB Ge | OpB Eg | OpB El-> 5
+        // =     | <      | >      | <>     | <=     | >=     | ==
+        | OpB Eq | OpB Lt | OpB Gt | OpB Ne | OpB Le | OpB Ge | OpB Similar -> 5
         | OpB Plus | OpB Minus -> 6
-        | OpB Mod -> 7
         | OpB Times | OpB Divide -> 8
         | PrefB Neg -> 9
 [<Struct>]

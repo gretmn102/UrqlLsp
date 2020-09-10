@@ -83,22 +83,24 @@ let pAssign stmts =
 let textOutside: _ Parser =
     appendToken Tokens.Text
         (manyStrings
-            (many1Satisfy (isNoneOf " \n&;/")
-             <|> (ws1Take .>>? notFollowedBy (satisfy (isAnyOf "\n&;")))
-             <|> (pstring "/" .>>? notFollowedByString "*")
-            ))
+            (choice [
+                many1Satisfy (isNoneOf " \n&;/")
+                ws1Take .>>? notFollowedBy (satisfy (isAnyOf "\n&;"))
+                pstring "/" .>>? notFollowedByString "*"
+            ]))
+
 let textInside: _ Parser =
+    let notFollowedByElse =
+        skipStringCI "else"
+        .>> (skipSatisfy (not << isIdentifierChar)
+             <|> eof)
+
     appendToken Tokens.Text
         (manyStrings
             (choice [
-                many1Satisfy (isNoneOf " \n&;/eE")
-                ws1Take .>>? notFollowedBy (satisfy (isAnyOf "\n&;"))
+                many1Satisfy (isNoneOf " \n&;/")
+                ws1Take .>>? notFollowedBy (skipSatisfy (isAnyOf "\n&;") <|> notFollowedByElse)
                 pstring "/" .>>? notFollowedByString "*"
-                ((satisfy (isAnyOf "eE") |>> string)
-                  .>>? notFollowedBy
-                        (pstringCI "lse"
-                         .>> (skipSatisfy (not << isIdentifierChar) <|> eof))
-                 )
             ]))
 
 let plnOutside textOutside: _ Parser =
@@ -250,6 +252,9 @@ let pcallProc =
     choice [
         plnOutside textInside
         gotoOutside textInside
+
+        notFollowedByBinOpIdent .>>. textInside
+        |>> fun (name, text) -> Proc(name, [Val (String [[StringKind text]])])
     ]
 let blockComment : _ Parser =
     pstring "/*"

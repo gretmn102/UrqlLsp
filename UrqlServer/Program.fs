@@ -90,27 +90,22 @@ module CommandResponse =
                 | Ast.Plus
                 | Ast.Minus
                 | Ast.Times
-                | Ast.Divide
-                | Ast.Mod ->
+                | Ast.Divide ->
                     "operatorArithmetic"
+                | Ast.Similar
                 | Ast.Eq ->
                     "operatorComparison"
                 | Ast.Gt
                 | Ast.Ge
                 | Ast.Lt
                 | Ast.Le
-                | Ast.Bang
-                | Ast.Ne
-                | Ast.El
-                | Ast.Eg ->
+                | Ast.Ne ->
                     "operatorRelational"
                 | Ast.Or
                 | Ast.And ->
                     "operatorLogical"
             | UnaryOperator(unaryOperator) ->
                 match unaryOperator with
-                | Ast.UnarOp.Obj -> "operator"
-                | Ast.UnarOp.Loc -> "operator"
                 | Ast.UnarOp.No -> "operatorLogical"
                 | Ast.UnarOp.Neg -> "operatorArithmetic"
             | OperatorAssignment -> "operatorAssignment"
