@@ -88,42 +88,88 @@ let textOutside: _ Parser =
                 ws1Take .>>? notFollowedBy (satisfy (isAnyOf "\n&;"))
                 pstring "/" .>>? notFollowedByString "*"
             ]))
+let pvar varHighlightKind (range, (varName:string)) =
+    let msg =
+        Defines.vars
+        |> Map.tryFind (varName.ToLower())
+        |> function
+            | Some dscr -> dscr
+            | None ->
+                "Пользовательская глобальная переменная числового типа"
+    appendToken2 Tokens.Variable range
+    >>. appendHover2 (RawDescription msg) range
+    >>. appendVarHighlight range (ImplicitNumericType, varName) varHighlightKind
 
-let textInside: _ Parser =
+let psub: _ Parser =
+    let psub, psubref = createParserForwardedToRef()
+    let pansiCode =
+        appendToken Tokens.TokenType.InterpolationBegin (pchar '#')
+        >>? pchar '#'
+        >>? appendToken Tokens.TokenType.ConstantNumericInteger pint32
+        |>> (char >> SubAsciiChar)
+        .>> appendToken Tokens.TokenType.InterpolationEnd (pchar '$')
+    let ident =
+        many1Satisfy (isNoneOf "#$\n")
+
+    let p2 =
+        applyRange ident
+        .>>? appendToken Tokens.TokenType.InterpolationEnd (pchar '$')
+        >>= fun (r, name) ->
+            pvar ReadAccess (r, name)
+            >>% SubVar name
+
+    let p =
+        let p = psub <|> (ident |>> fun name -> SubVar name)
+        appendToken Tokens.TokenType.InterpolationBegin (pchar '#')
+        >>. opt (pchar '%')
+            >>= fun isStr ->
+                p2 |>> fun x -> Subs(Option.isSome isStr, [x])
+                <|> (many1 p |>> fun x -> Subs(Option.isSome isStr, x)
+                     .>> appendToken Tokens.TokenType.InterpolationEnd (pchar '$'))
+
+    psubref := pansiCode <|> p
+    psub
+let textInside: Text Parser =
     let notFollowedByElse =
         skipStringCI "else"
         .>> (skipSatisfy (not << isIdentifierChar)
              <|> eof)
+    let ptext =
+        appendToken Tokens.Text
+            (many1Strings
+                (choice [
+                    many1Satisfy (isNoneOf " \n&;/#")
+                    ws1Take .>>? notFollowedBy (skipSatisfy (isAnyOf "\n&;") <|> notFollowedByElse)
+                    pstring "/" .>>? notFollowedByString "*"
+                ]))
+    many
+        (ptext |>> JustText
+         <|> (psub |>> Substitution))
 
-    appendToken Tokens.Text
-        (manyStrings
-            (choice [
-                many1Satisfy (isNoneOf " \n&;/")
-                ws1Take .>>? notFollowedBy (skipSatisfy (isAnyOf "\n&;") <|> notFollowedByElse)
-                pstring "/" .>>? notFollowedByString "*"
-            ]))
-
-let plnOutside textOutside: _ Parser =
-    pstringCI "pln" >>. ws >>. textOutside
+let plnOutside pcontent: _ Parser =
+    pstringCI "pln" >>. ws >>. pcontent
     |>> Pln
-let gotoOutside textOutside: _ Parser =
+let gotoOutside pcontent: _ Parser =
     pstringCI "goto"
-    >>. ws >>. applyRange textOutside
-    >>= fun (r, locName) ->
-        let locNameLower = String.toLower locName
-        appendLocHighlight r locNameLower VarHighlightKind.ReadAccess
-        >>. pGetDefLocPos locNameLower
-            >>= function
-                | None ->
-                    updateUserState (fun st ->
-                        { st with
-                            NotDefinedLocs =
-                                st.NotDefinedLocs
-                                |> Map.addOrMod locNameLower [r] (fun xs -> r::xs)
-                        }
-                    )
-                | Some _ -> preturn ()
-        >>% Goto locName
+    >>. ws >>. applyRange pcontent
+    >>= fun (r, text) ->
+        match text with
+        | [JustText locName] ->
+            let locNameLower = String.toLower locName
+            appendLocHighlight r locNameLower VarHighlightKind.ReadAccess
+            >>. pGetDefLocPos locNameLower
+                >>= function
+                    | None ->
+                        updateUserState (fun st ->
+                            { st with
+                                NotDefinedLocs =
+                                    st.NotDefinedLocs
+                                    |> Map.addOrMod locNameLower [r] (fun xs -> r::xs)
+                            }
+                        )
+                    | Some _ -> preturn ()
+        | _ -> preturn ()
+        >>% Goto text
 let pcallProc =
     let f defines p =
         applyRange p
@@ -254,7 +300,7 @@ let pcallProc =
         gotoOutside textInside
 
         notFollowedByBinOpIdent .>>. textInside
-        |>> fun (name, text) -> Proc(name, [Val (String [[StringKind text]])])
+        |>> fun (name, text) -> RawProc(name, text)
     ]
 let blockComment : _ Parser =
     pstring "/*"
@@ -365,6 +411,7 @@ let pstmt =
             inlineComment
             pendKeyword >>% End
             pIf
+            psub |>> SubStmt
             pAssign pstmts
             pcallProc
             // notFollowedBy (pchar '-' >>. ws >>. (skipNewline <|> skipChar '-' <|> eof)) // `-` завершает локацию
