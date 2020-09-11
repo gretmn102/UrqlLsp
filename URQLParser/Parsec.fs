@@ -8,6 +8,21 @@ open Qsp.Ast
 open Qsp.Parser.Generic
 open Qsp.Parser.Expr
 
+let applyLoc (r, locName) =
+    let locNameLower = String.toLower locName
+    appendToken2 Tokens.TokenType.NameLabel r
+    >>. appendLocHighlight r locNameLower VarHighlightKind.ReadAccess
+    >>. pGetDefLocPos locNameLower
+        >>= function
+            | None ->
+                updateUserState (fun st ->
+                    { st with
+                        NotDefinedLocs =
+                            st.NotDefinedLocs
+                            |> Map.addOrMod locNameLower [r] (fun xs -> r::xs)
+                    }
+                )
+            | Some _ -> preturn ()
 
 let ppunctuationTerminator : _ Parser =
     appendToken Tokens.TokenType.PunctuationTerminatorStatement (pchar '&')
@@ -129,47 +144,82 @@ let psub: _ Parser =
 
     psubref := pansiCode <|> p
     psub
-let textInside: Text Parser =
+
+let link: _ Parser =
+    appendToken Tokens.TokenType.InterpolationBegin (pstring "[[")
+    >>. applyRange
+            (many1Strings
+                (many1Satisfy (isNoneOf "|\n]")
+                 <|> (pstring "]" .>>? notFollowedByString "]")))
+    .>>. opt
+            (pchar '|'
+             >>. applyRange
+                     (many1Strings
+                        (many1Satisfy (isNoneOf "\n]")
+                         <|> (pstring "]" .>>? notFollowedByString "]"))))
+    .>> appendToken Tokens.TokenType.InterpolationBegin (pstring "]]")
+    >>= fun ((textRange, text), locName) ->
+            match locName with
+            | Some(locRange, locName) ->
+                appendToken2 Tokens.TokenType.Text textRange
+                >>. applyLoc(locRange, locName)
+                >>% (text, locName)
+            | None ->
+                applyLoc(textRange, text)
+                >>% (text, text)
+
+let ptext =
     let notFollowedByElse =
         skipStringCI "else"
         .>> (skipSatisfy (not << isIdentifierChar)
              <|> eof)
-    let ptext =
-        appendToken Tokens.Text
-            (many1Strings
-                (choice [
-                    many1Satisfy (isNoneOf " \n&;/#")
-                    ws1Take .>>? notFollowedBy (skipSatisfy (isAnyOf "\n&;") <|> notFollowedByElse)
-                    pstring "/" .>>? notFollowedByString "*"
-                ]))
+    applyRange
+        (many1Strings
+            (choice [
+                many1Satisfy (isNoneOf " \n&;/#[")
+                ws1Take .>>? notFollowedBy (skipSatisfy (isAnyOf "\n&;") <|> notFollowedByElse)
+                pstring "/" .>>? notFollowedByString "*"
+                pstring "[" .>>? notFollowedByString "["
+            ]))
+let textInside: Text Parser =
     many
-        (ptext |>> JustText
-         <|> (psub |>> Substitution))
+        (ptext >>= fun (r, x) -> appendToken2 Tokens.Text r >>% JustText x
+         <|> (psub |>> Substitution)
+         <|> (link |>> Link))
 
 let plnOutside pcontent: _ Parser =
     pstringCI "pln" >>. ws >>. pcontent
     |>> Pln
 let gotoOutside pcontent: _ Parser =
+    let p =
+        ptext .>>. pcontent
+        >>= fun ((locRange, locName), xs) ->
+            if List.isEmpty xs then
+                applyLoc(locRange, locName)
+                >>% [JustText locName]
+            else
+                appendToken2 Tokens.Text locRange
+                >>% (JustText locName)::xs
     pstringCI "goto"
-    >>. ws >>. applyRange pcontent
-    >>= fun (r, text) ->
-        match text with
-        | [JustText locName] ->
-            let locNameLower = String.toLower locName
-            appendLocHighlight r locNameLower VarHighlightKind.ReadAccess
-            >>. pGetDefLocPos locNameLower
-                >>= function
-                    | None ->
-                        updateUserState (fun st ->
-                            { st with
-                                NotDefinedLocs =
-                                    st.NotDefinedLocs
-                                    |> Map.addOrMod locNameLower [r] (fun xs -> r::xs)
-                            }
-                        )
-                    | Some _ -> preturn ()
-        | _ -> preturn ()
-        >>% Goto text
+    >>. ws
+    >>. (p <|> pcontent)
+    |>> Goto
+
+let punknownProc =
+    applyRange notFollowedByBinOpIdent
+    .>>. textInside
+    >>= fun ((range, name), text) ->
+        let p =
+            [
+                "Такой процедуры нет, а если есть, то напишите мне, автору расширения, пожалуйста, и я непременно добавлю."
+                "Когда-нибудь добавлю: 'Возможно, вы имели ввиду: ...'"
+            ]
+            |> String.concat "\n"
+            |> appendSemanticError range
+        appendToken2 Tokens.TokenType.Procedure range
+        >>. p
+        >>% RawProc(name, text)
+
 let pcallProc =
     let f defines p =
         applyRange p
@@ -298,9 +348,6 @@ let pcallProc =
     choice [
         plnOutside textInside
         gotoOutside textInside
-
-        notFollowedByBinOpIdent .>>. textInside
-        |>> fun (name, text) -> RawProc(name, text)
     ]
 let blockComment : _ Parser =
     pstring "/*"
@@ -412,10 +459,10 @@ let pstmt =
             pendKeyword >>% End
             pIf
             psub |>> SubStmt
-            pAssign pstmts
             pcallProc
-            // notFollowedBy (pchar '-' >>. ws >>. (skipNewline <|> skipChar '-' <|> eof)) // `-` завершает локацию
-            // >>. (pexpr |>> fun arg -> Proc("*pl", [arg]))
+            pAssign pstmts
+
+            punknownProc
         ]
     pstmtRef := (getPosition |>> (fparsecPosToPos >> NoEqualityPosition)) .>>.? p
     pstmt
@@ -453,7 +500,7 @@ let ploc =
                         }
                     )
                 >>. appendLocHighlight r locNameLower VarHighlightKind.WriteAccess // и все равно добавить, даже в случае семантической ошибки? Хм, ¯\_(ツ)_/¯
-                >>. appendToken2 Tokens.TokenType.StringQuotedSingle r
+                >>. appendToken2 Tokens.TokenType.NameLabel r
                 >>. preturn name
              )
          .>> spaces)

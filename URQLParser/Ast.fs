@@ -132,6 +132,9 @@ type Substitution =
 type TextElement =
     | Substitution of Substitution
     | JustText of string
+    /// * compact version: `[[текст ссылки]]`
+    /// * full version: `[[текст ссылки|название локации]]`
+    | Link of text:string * locName:string
 type Text = TextElement list
 type StmtsOrRaw =
     | Raw of string

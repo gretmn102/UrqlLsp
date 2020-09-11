@@ -189,6 +189,15 @@ let showText (xs:Text) : ShowS =
             showString str
         | Substitution sub ->
             showSub sub
+        | Link(text, locName) ->
+            let body =
+                if text = locName then
+                    showString text
+                else
+                    showString text << showChar '|' << showString locName
+            showString "[["
+            << body
+            << showString "]]"
     )
     |> join ""
 let showStmt indentsOption (formatConfig:FormatConfig) =

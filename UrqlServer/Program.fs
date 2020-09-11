@@ -61,7 +61,7 @@ module CommandResponse =
         let map (t: TokenType): string =
             match t with
             | ConstantNumericInteger -> "constantNumericInteger"
-            | NameLabel -> "string"
+            | NameLabel -> "label"
             | LabelColon -> "punctuationSeparatorColon"
             | InterpolationEnd -> "interpolationEnd"
             | InterpolationBegin -> "interpolationBegin"
