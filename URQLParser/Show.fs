@@ -172,10 +172,15 @@ type IndentsOption =
 let spaceBetween (s:ShowS) : ShowS =
     showSpace << s << showSpace
 
-let showSub = function
-    | SubVar(_) -> failwith "Not Implemented"
-    | Subs(_) -> failwith "Not Implemented"
-    | SubAsciiChar(_) -> failwith "Not Implemented"
+let rec showSub sub =
+    let brace p = showChar '#' << p << showChar '$'
+    match sub with
+    | SubVar x -> showString x
+    | Subs(isStr, x) ->
+        brace
+            (if isStr then showChar '%' else id
+             << join "" (List.map showSub x))
+    | SubAsciiChar c -> brace (showChar '#' << shows (int c))
 let showText (xs:Text) : ShowS =
     xs
     |> List.map (
@@ -195,8 +200,8 @@ let showStmt indentsOption (formatConfig:FormatConfig) =
             replicate spacesCount ' '
     let rec f' (pos, stmt) =
         let showStmtsInline xs : ShowS =
-            List.collect f' xs // TODO
-            |> join "&"
+            List.collect f' xs
+            |> joins (showSpace << showChar '&' << showSpace)
         let showAssign = showAssign showStmtsInline
         let showExpr = showExpr showStmtsInline
         let showStringLines = showStringLines showExpr showStmtsInline
@@ -222,7 +227,7 @@ let showStmt indentsOption (formatConfig:FormatConfig) =
                 << showSpace << showStmtsInline thenBody
                 << if List.isEmpty elseBody then id
                    else
-                    showString "else"
+                    showSpace << showString "else"
                     << showSpace << showStmtsInline elseBody
             ]
         | Comment s -> [showChar ';' << showString s]
