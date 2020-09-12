@@ -93,11 +93,6 @@ let term expr =
                     "Пользовательская глобальная переменная числового типа"
     let pterm, ptermRef = createParserForwardedToRef()
     let pcallFuncOrArrOrVar =
-        let pbraket =
-            between
-                (appendToken TokenType.BraceSquareOpened (pchar '[' .>> ws))
-                (appendToken TokenType.BraceSquareClosed (pchar ']'))
-                (sepBy expr (skipChar ',' >>. ws))
         let pBracesArgs =
             bet_ws '(' ')' (sepBy expr (pchar ',' >>. ws))
         let pcallFunctionOrArrOrVar =
@@ -133,14 +128,6 @@ let term expr =
                     )
                 //   Невозможно, поскольку неоднозначно трактуется `f+1` => `f(+1)` или `f + 1`
                 //   <|> (pterm |>> fun arg -> TokenType.Function, fun (typ', name) -> Func(name, [arg]))
-                  <|> (pbraket
-                       |>> fun args ->
-                            fun (varType, nameVar) range ->
-                                let desc = getDesc(varType, nameVar)
-                                appendHover2 (RawDescription desc) range
-                                >>. appendToken2 TokenType.Variable range
-                                >>. appendVarHighlight range (varType, nameVar) VarHighlightKind.ReadAccess
-                                >>% Arr((varType, nameVar), args))
                   <|>% fun (varType, nameVar) range ->
                         let desc = getDesc(varType, nameVar)
                         appendHover2 (RawDescription desc) range
@@ -214,46 +201,6 @@ let term expr =
         |>> Val
     ptermRef := pval <|> pcallFuncOrArrOrVar
     pval <|> pcallFuncOrArrOrVar <|> bet_ws '(' ')' expr
-
-let pExprOld : _ Parser =
-    let opp = new OperatorPrecedenceParser<Expr, unit, _>()
-
-    let expr = opp.ExpressionParser
-    opp.TermParser <- term expr .>> ws
-
-    Op.ops
-    |> Array.iter (fun (opTyp, (opName, isSymbolic)) ->
-        let prec = Precedences.prec <| Precedences.OpB opTyp
-        if isSymbolic then
-            if opName = ">" then
-                // внутри string есть подстановка `<<expr>>`, и эта условность нужна, чтобы не захватывать `>>`
-                let p = notFollowedBy (pchar '>') >>. ws
-                InfixOperator(opName, p, prec, Associativity.Left, fun x y -> Expr(opTyp, x, y))
-            else
-                InfixOperator(opName, ws, prec, Associativity.Left, fun x y -> Expr(opTyp, x, y))
-            |> opp.AddOperator
-        else
-            let afterStringParser = notFollowedVarCont >>. ws
-            InfixOperator(opName, afterStringParser, prec, Associativity.Left, fun x y -> Expr(opTyp, x, y))
-            |> opp.AddOperator
-            InfixOperator(opName.ToUpper(), afterStringParser, prec, Associativity.Left, fun x y -> Expr(opTyp, x, y))
-            |> opp.AddOperator
-    )
-
-    Reflection.Reflection.unionEnum
-    |> Array.iter (fun unT ->
-        let afterStringParser opName =
-            if String.forall isLetter opName then
-                notFollowedVarCont
-                >>. ws
-            else
-                ws
-        let unarOp = UnarOp.toString unT
-        let prec = Precedences.prec <| Precedences.PrefB unT
-        PrefixOperator(unarOp, afterStringParser unarOp, prec, false, fun x -> UnarExpr(unT, x))
-        |> opp.AddOperator
-    )
-    expr <?> "expr"
 
 let pExprNew : _ Parser =
     let pExpr, pExprRef = createParserForwardedToRef()

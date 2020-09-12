@@ -50,10 +50,6 @@ let pImplicitVarWhenAssign p =
 
 let pAssign stmts =
     let assdef name ass =
-        let asscode =
-            between (pchar '{' >>. spaces) (spaces >>. char_ws '}') stmts
-            |>> fun stmts -> AssignCode(ass, stmts)
-
         let str_ws s =
             appendToken Tokens.TokenType.OperatorAssignment
                 (pstring s)
@@ -64,21 +60,10 @@ let pAssign stmts =
             str_ws "/=" >>. pexpr |>> fun defExpr -> Assign(ass, Expr.Expr(Divide, Var name, defExpr))
             str_ws "+=" >>. pexpr |>> fun defExpr -> Assign(ass, Expr.Expr(Plus, Var name, defExpr))
             str_ws "*=" >>. pexpr |>> fun defExpr -> Assign(ass, Expr.Expr(Times, Var name, defExpr))
-            str_ws "=" >>. (asscode <|> (pexpr |>> fun defExpr -> Assign(ass, defExpr)))
+            str_ws "=" >>. pexpr |>> fun defExpr -> Assign(ass, defExpr)
         ]
 
-    let assign name =
-        let arr =
-            between
-                (appendToken Tokens.TokenType.BraceSquareOpened (pchar '[' .>> ws))
-                (appendToken Tokens.TokenType.BraceSquareClosed (pchar ']'))
-                (opt pexpr)
-            |>> fun braketExpr ->
-                match braketExpr with
-                | Some braketExpr ->
-                    AssignArr(name, braketExpr)
-                | None -> AssignArrAppend name
-        (arr .>> ws) <|>% AssignVar name >>=? assdef name
+    let assign name = assdef name name
     let pExplicitAssign =
         let p =
             appendToken
@@ -180,7 +165,9 @@ let ptext =
                 ws1Take .>>? notFollowedBy (skipSatisfy (isAnyOf "\n&;") <|> notFollowedByElse)
                 pstring "/" .>>? notFollowedByString "*"
                 pstring "[" .>>? notFollowedByString "["
+                // skipNewline >>? pchar '_' >>% ""
             ]))
+    // many1 (p <|> (skipNewline >>? pchar '_' >>. p))
 let textInside: Text Parser =
     many
         (ptext >>= fun (r, x) -> appendToken2 Tokens.Text r >>% JustText x
@@ -220,7 +207,7 @@ let punknownProc =
         >>. p
         >>% RawProc(name, text)
 
-let pcallProc =
+let pcallProc : _ Parser =
     let f defines p =
         applyRange p
         >>= fun (range, name) ->
@@ -387,71 +374,34 @@ let pstmts1' pstmt =
         (pstmt .>> spaces
          .>> (skipMany (ppunctuationTerminator .>> spaces)))
 let pstmt =
+    let underscore = newline >>? skipChar '_' >>. ws
     let pstmt, pstmtRef = createParserForwardedToRef<PosStatement, _>()
     let pInlineStmts =
-        many (pstmt .>> ws .>> skipMany (ppunctuationTerminator .>> ws))
+        many (pstmt .>> ws .>> skipMany (ppunctuationTerminator >>. ws <|> underscore))
     let pInlineStmts1 =
-        many1 (pstmt .>> ws .>> skipMany (ppunctuationTerminator .>> ws))
+        many1 (pstmt .>> ws .>> skipMany (ppunctuationTerminator >>. ws <|> underscore))
     let pstmts = pstmts' pstmt
 
-    let pcolonKeyword : _ Parser =
-        genKeywordParser Tokens.TokenType.Then "then"
-
     let pIf =
+        let pthenKeyword : _ Parser =
+            genKeywordParser Tokens.TokenType.Then "then"
         let pifKeyword : _ Parser =
             genKeywordParser Tokens.TokenType.If "if"
-        let pelseifKeyword : _ Parser =
-            genKeywordParser Tokens.TokenType.ElseIf "elseif"
         let pelseKeyword : _ Parser =
             genKeywordParser Tokens.TokenType.Else "else"
-        let pifHeader = pifKeyword .>> ws >>. pexpr .>> pcolonKeyword
-        let pelseifHeader = pelseifKeyword .>> ws >>. pexpr .>> pcolonKeyword
-
-        let setIsEndOptionalTo boolean =
-            updateUserState (fun x -> { x with IsEndOptional = boolean })
+        let pifHeader = pifKeyword .>> ws >>. pexpr .>> pthenKeyword
 
         let pElse1 =
-            pelseKeyword .>> ws
-            >>. (pInlineStmts1 .>> opt pendKeyword
-                 <|> (spaces >>. pstmts .>> pendKeyword))
-        let pend =
-            getUserState
-            >>= fun x ->
-                if x.IsEndOptional then
-                    optional pendKeyword
-                else
-                    pendKeyword >>% ()
+            pelseKeyword .>> (ws >>. optional underscore)
+            >>. (pInlineStmts1 .>> opt pthenKeyword
+                 <|> (spaces >>. pstmts .>> pthenKeyword))
+        pipe3
+            (pifHeader .>> (ws >>. optional underscore))
+            (pInlineStmts1 .>> ws)
+            (opt pElse1)
+            (fun expr thenBody elseBody ->
+                If(expr, thenBody, Option.defaultValue [] elseBody))
 
-        let pelseIf =
-            let p =
-                ws .>>? skipNewline >>. spaces >>. pstmts .>> setIsEndOptionalTo false
-                <|> (spaces >>. pInlineStmts .>> setIsEndOptionalTo true)
-            many1 ((getPosition |>> (fparsecPosToPos >> NoEqualityPosition)) .>>.? pelseifHeader .>>. p)
-            .>>. (pElse1 <|> (pend >>% []))
-            |>> fun (elifs, elseBody) ->
-                let rec f = function
-                    | ((pos, expr), thenBody)::xs ->
-                        [pos, If(expr, thenBody, f xs)]
-                    | [] -> elseBody
-                f elifs
-
-        // `end` нужен, чтобы инструкции, определенные ниже, не ушли в тело `if`
-        // ```qsps
-        // if expr:
-        //     stmt1
-        // end & ! без него `stmt2` станет принадлежать телу `if`
-        // stmt2
-        // ...
-        // ```
-
-        // `if expr: stmt1 & stmt2 & ...` — такому выражению `end` не нужен, поскольку эту роль выполняет конец строки.
-        // Также работает и с `elif expr: stmt1 & stmt2 & ...`, и с `else expr: stmt1 & stmt2 & ...`.
-        pipe2
-            (pifHeader .>> ws)
-            ((pInlineStmts1 .>>. (pelseIf <|> pElse1 <|> (opt pendKeyword >>% []))
-             <|> (spaces >>. pstmts .>>. (pelseIf <|> pElse1 <|> (pendKeyword >>% [])))))
-            (fun expr (thenBody, elseBody) ->
-                If(expr, thenBody, elseBody))
     let p =
         choice [
             blockComment

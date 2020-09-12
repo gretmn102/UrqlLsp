@@ -125,8 +125,6 @@ and State =
         /// Информация обо всём и вся
         Hovers: (Tokens.InlineRange * HoverDescription) list
         Highlights: Highlights
-        /// Нужен для `elseif` конструкции. Эх, если бы ее можно было как-то именно там оставить, но увы.
-        IsEndOptional : bool
         LastSymbolPos : FParsec.Position
         /// Локации, которые неопределенны именно в этом документе, но переходы к ним есть
         NotDefinedLocs: Map<Ast.LocationName, Tokens.InlineRange list>
@@ -142,7 +140,6 @@ let emptyState =
         Tokens = []
         SemanticErrors = []
         Hovers = []
-        IsEndOptional = false
         LastSymbolPos = FParsec.Position("", 0L, 1L, 1L)
         Highlights = highlightsEmpty
         NotDefinedLocs = Map.empty

@@ -159,12 +159,6 @@ let rec showExpr showStmtsInline = function
     | Arr(var, es) -> showVar var << bet "[" "]" (List.map (showExpr showStmtsInline) es |> join ", ")
 
 
-let showAssign showStmtsInline = function
-    | AssignWhat.AssignArr(var, key) -> showVar var << bet "[" "]" (showExpr showStmtsInline key)
-    | AssignWhat.AssignVar var -> showVar var
-    | AssignWhat.AssignArrAppend var -> showVar var << showString "[]"
-
-let (|AssingName|) = function AssignArr(x, _) -> x | AssignVar x -> x | AssignArrAppend x -> x
 type IndentsOption =
     | UsingSpaces of int
     | UsingTabs
@@ -211,14 +205,14 @@ let showStmt indentsOption (formatConfig:FormatConfig) =
         let showStmtsInline xs : ShowS =
             List.collect f' xs
             |> joins (showSpace << showChar '&' << showSpace)
-        let showAssign = showAssign showStmtsInline
+        let showAssign = showVar
         let showExpr = showExpr showStmtsInline
         let showStringLines = showStringLines showExpr showStmtsInline
         match stmt with
-        | Assign(AssingName name' as ass, Expr((Plus|Minus) as op, Var name, e)) when name' = name ->
-            [showAssign ass << spaceBetween (ops op << showChar '=') << showExpr e]
-        | Assign(AssingName name' as ass, Expr((Plus|Minus) as op, e, Var name)) when name' = name ->
-            [showAssign ass << spaceBetween (showChar '=' << ops op) << showExpr e]
+        | Assign(name', Expr((Plus|Minus) as op, Var name, e)) when name' = name ->
+            [showAssign name' << spaceBetween (ops op << showChar '=') << showExpr e]
+        | Assign(name', Expr((Plus|Minus) as op, e, Var name)) when name' = name ->
+            [showAssign name' << spaceBetween (showChar '=' << ops op) << showExpr e]
         | Assign(ass, e) ->
             [showAssign ass << spaceBetween (showChar '=') << showExpr e]
         | RawProc(name, e) ->
@@ -240,20 +234,6 @@ let showStmt indentsOption (formatConfig:FormatConfig) =
                     << showSpace << showStmtsInline elseBody
             ]
         | Comment s -> [showChar ';' << showString s]
-        | AssignCode(ass, stmts) ->
-            let header = showAssign ass << spaceBetween (showChar '=') << showChar '{'
-            [
-                if List.isEmpty stmts then
-                    yield header << showChar '}'
-                else
-                    yield header
-                    yield!
-                        stmts
-                        |> List.collect
-                            (f' >> List.map ((<<) tabs))
-                    yield showChar '}'
-            ]
-
         | Exit -> [showString "exit"]
         | Pln str -> [showString "pln" << showSpace << showText str ]
         | Goto lab -> [showString "goto" << showSpace << showText lab ]

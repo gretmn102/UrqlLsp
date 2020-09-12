@@ -159,19 +159,12 @@ and Expr =
     | Arr of var:Var * Expr list
     | UnarExpr of UnarOp * Expr
     | Expr of Op * Expr * Expr
-
-and AssignWhat =
-    | AssignVar of var:Var
-    /// Ключом массива может быть значение любого типа
-    | AssignArr of var:Var * key:Expr
-    | AssignArrAppend of var:Var
 and PosStatement = NoEqualityPosition * Statement
 and Statement =
     | SubStmt of Substitution
     | Pln of Text
     | Goto of Text
-    | Assign of AssignWhat * Expr
-    | AssignCode of AssignWhat * PosStatement list
+    | Assign of var:Var * Expr
     | RawProc of string * Text
     | If of Expr * PosStatement list * PosStatement list
     | Label of string
