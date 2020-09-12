@@ -423,65 +423,55 @@ let pstmts1 = pstmts1' pstmt
 let psharpKeyword : _ Parser =
     appendToken Tokens.TokenType.SharpBeginLoc (pchar ':')
 
+let plocHeader =
+    psharpKeyword .>> ws
+    >>. (applyRange
+            (many1Strings
+                (many1Satisfy (isNoneOf " \t\n")
+                 <|> (many1Satisfy (isAnyOf " \t") .>>? notFollowedByNewline))
+             <?> "location name")
+          >>= fun (r, name) ->
+            let pCheckLocExists r2 locName =
+                pGetDefLocPos locName
+                >>= function
+                    | Some r ->
+                        sprintf "Локация уже определена в\n%A" r
+                        |> appendSemanticError r2
+                    | None -> preturn ()
 
+            let locNameLower = String.toLower name
+            pCheckLocExists r locNameLower
+            >>. updateUserState (fun st ->
+                    { st with
+                        NotDefinedLocs =
+                            Map.remove locNameLower st.NotDefinedLocs
+                    }
+                )
+            >>. appendLocHighlight r locNameLower VarHighlightKind.WriteAccess
+            >>. appendToken2 Tokens.TokenType.NameLabel r
+            >>. preturn name
+         )
 let ploc =
-    pipe2
-        (psharpKeyword .>> ws
-         >>. (applyRange
-                (many1Strings
-                    (many1Satisfy (isNoneOf " \t\n")
-                     <|> (many1Satisfy (isAnyOf " \t") .>>? notFollowedByNewline))
-                 <?> "location name")
-              >>= fun (r, name) ->
-                let pCheckLocExists r2 locName =
-                    pGetDefLocPos locName
-                    >>= function
-                        | Some r ->
-                            sprintf "Локация уже определена в\n%A" r
-                            |> appendSemanticError r2
-                        | None -> preturn ()
+    tuple2 (plocHeader .>> spaces) pstmts
 
-                let locNameLower = String.toLower name
-                pCheckLocExists r locNameLower
-                >>. updateUserState (fun st ->
-                        { st with
-                            NotDefinedLocs =
-                                Map.remove locNameLower st.NotDefinedLocs // ну да, к чему проверки? И так удалит
-                        }
-                    )
-                >>. appendLocHighlight r locNameLower VarHighlightKind.WriteAccess // и все равно добавить, даже в случае семантической ошибки? Хм, ¯\_(ツ)_/¯
-                >>. appendToken2 Tokens.TokenType.NameLabel r
-                >>. preturn name
-             )
-         .>> spaces)
-        // (many (pstmts1 .>> many (pendKeyword .>> spaces)) |>> List.concat
-        (many (pstmts1 .>> spaces) |>> List.concat
-        )
-        (fun name body -> Location(name, body))
-
-let pAfterAll =
-    preturn ()
+let emptyState =
+    { emptyState with PStmts = pstmts }
+let pstart =
+    spaces
+    >>. tuple2 (opt (plocHeader .>> spaces)) pstmts
+    .>>. many (ploc .>> spaces)
+    .>> (getPosition >>= fun p ->
+            updateUserState (fun st ->
+                { st with LastSymbolPos = p}))
+    |>> fun (firstLoc, restLocs) ->
+        {| FirstLoc = firstLoc; Locations = restLocs |} : Locations
 let start str =
-    let emptyState =
-        { emptyState with PStmts = pstmts }
-    let p =
-        spaces >>. many (ploc .>> spaces)
-        .>> (getPosition >>= fun p ->
-                updateUserState (fun st ->
-                    { st with LastSymbolPos = p}))
-    runParserOnString (p .>> pAfterAll .>> eof)
+    runParserOnString (pstart .>> eof)
         emptyState
         ""
         str
 let startOnFile enc path =
-    let emptyState =
-        { emptyState with PStmts = pstmts }
-    let p =
-        spaces >>. many (ploc .>> spaces)
-        .>> (getPosition >>= fun p ->
-                updateUserState (fun st ->
-                    { st with LastSymbolPos = p}))
-    runParserOnFile (p .>> pAfterAll .>> eof)
+    runParserOnFile (pstart .>> eof)
         emptyState
         path
         enc

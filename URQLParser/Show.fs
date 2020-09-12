@@ -242,13 +242,24 @@ let showStmt indentsOption (formatConfig:FormatConfig) =
         | SubStmt x -> [showSub x]
     f'
 
-let showLoc indentsOption isSplitStringPl (Location(name, statements)) : ShowS list =
+let showLoc indentsOption isSplitStringPl (name, statements) : ShowS list =
     [
         yield showString ": " << showString name
         yield! List.collect (showStmt indentsOption isSplitStringPl) statements
     ]
 
-let printLocs indentsOption isSplitStringPl xs =
-    List.map (lines << showLoc indentsOption isSplitStringPl) xs
+let printLocs indentsOption isSplitStringPl (xs:Locations) =
+    let firstLoc =
+        let name, body = xs.FirstLoc
+        [
+            match name with
+            | Some name ->
+                yield showString ": " << showString name
+            | None -> ()
+            yield! List.collect (showStmt indentsOption isSplitStringPl) body
+        ]
+    let xs =
+        List.map (lines << showLoc indentsOption isSplitStringPl) xs.Locations
+    lines firstLoc :: xs
     |> joinEmpty "\n\n"
     |> show

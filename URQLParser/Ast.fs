@@ -20,6 +20,8 @@ let test () =
     let y = NoEqualityPosition(positionCreate "" 0L 0L 1L)
     x = y
 
+type LocationName = string
+
 [<Struct>]
 type Op =
     /// `+`
@@ -134,7 +136,7 @@ type TextElement =
     | JustText of string
     /// * compact version: `[[текст ссылки]]`
     /// * full version: `[[текст ссылки|название локации]]`
-    | Link of text:string * locName:string
+    | Link of text:string * locName:LocationName
 type Text = TextElement list
 type StmtsOrRaw =
     | Raw of string
@@ -172,10 +174,9 @@ and Statement =
     | Comment of string
     | Exit
     | End
-type LocationName = string
-/// ```qsp
-/// # location name
-/// 'asdf'
-/// - произвольный набор символов
-/// ```
-type Location = Location of LocationName * PosStatement list
+
+type Locations =
+    {|
+        FirstLoc: LocationName option * PosStatement list
+        Locations: (LocationName * PosStatement list) list
+    |}
