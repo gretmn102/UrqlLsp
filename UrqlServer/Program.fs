@@ -116,6 +116,7 @@ module CommandResponse =
             | StringBraced -> "string"
             | BraceSquareOpened
             | BraceSquareClosed -> "metaBraceSquare"
+            | PunctuationDefinitionComment -> "punctuationDefinitionComment"
         {
             Kind = "highlighting"
             Data =

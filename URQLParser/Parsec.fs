@@ -350,17 +350,17 @@ let pcallProc =
         gotoOutside textInside
     ]
 let blockComment : _ Parser =
-    pstring "/*"
+    appendToken Tokens.PunctuationDefinitionComment (pstring "/*")
     >>. manyStrings
             (appendToken Tokens.Comment
                 (many1Strings
                     (many1Satisfy (isNoneOf "*\n")
                      <|> (pstring "*" .>>? notFollowedByString "/")))
             <|> newlineReturn "\n")
-    .>> pstring "*/"
+    .>> appendToken Tokens.PunctuationDefinitionComment (pstring "*/")
     |>> BlockComment
 let inlineComment : _ Parser =
-    pchar ';'
+    appendToken Tokens.PunctuationDefinitionComment (pchar ';')
     >>. appendToken Tokens.Comment
             (manySatisfy ((<>) '\n'))
     |>> Comment

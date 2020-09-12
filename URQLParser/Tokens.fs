@@ -28,6 +28,8 @@ type TokenType =
     | Function
     /// В QSP `comment.line` и `comment.block` объединены
     | Comment
+    /// `punctuation.definition.comment.cs` — for `/*` `*/` and `//`
+    | PunctuationDefinitionComment
 
     | Procedure
     | Variable
