@@ -1079,30 +1079,6 @@ let procedures =
             ] |> String.concat "\n"
         "wait", dscr, arg Numeric
     ]
-let jump =
-    let dscr =
-        [
-            "`JUMP [$выражение]` - переход в текущем коде (при обработке локации / выбора действия) на метку `[$выражение]`. Метка на локации обозначается как `:[название метки]`. После описания метки (через \"&\") могут идти операторы. Если интерпретатор находит случайную метку, то он её просто игнорирует. Например:"
-            "```qsp"
-            "jump 'КонеЦ'"
-            "p 'Это сообщение не будет выведено'"
-            ":конец"
-            "p 'А это сообщение пользователь увидит'"
-            "```"
-            "С помощью оператора `JUMP` можно организовывать циклы:"
-            "```qsp"
-            "s = 0"
-            ":loop"
-            "if s < 9:"
-            "    s=s+1"
-            "    pl s"
-            "    jump 'LOOP'"
-            "end"
-            "p 'Всё!'"
-            "```"
-            "Оператор `JUMP` также полезен во время отладки квеста, чтобы \"обойти\" группу операторов, которые временно не нужны."
-        ] |> String.concat "\n"
-    "jump", dscr, arg String
 let transferOperators =
     [
         let dscr =
@@ -1129,14 +1105,6 @@ let transferOperators =
             ] |> String.concat "\n"
         let sign = argAndArgList String Any
         "goto", dscr, sign
-        "gt", dscr, sign
-        let dscr =
-            [
-                "`XGOTO [$выражение],[параметр 1],[параметр 2], ...` или `XGT [$выражение],[параметр 1],[параметр 2], ...` - отличается от \"`GOTO` / `GT`\" тем, что при переходе не очищается поле основного описания локации, а базовое описание новой локации добавляется к текущему основному описанию. Тем не менее, список действий заменяется действиями новой локации."
-            ] |> String.concat "\n"
-        let sign = argAndArgList String Any
-        "xgoto", dscr, sign
-        "xgt", dscr, sign
     ]
 let transferOperatorsSet =
     transferOperators
@@ -1144,7 +1112,7 @@ let transferOperatorsSet =
     |> Set.ofList
 /// Всевозможные процедуры
 let procs =
-    jump::(procedures @ transferOperators)
+    procedures @ transferOperators
     |> List.map (fun (name, dscr, sign) -> name, ((dscr:Description), sign))
     |> Map.ofList
 
@@ -1180,24 +1148,9 @@ let exprNamedOperators =
         "or", dscr, args [Numeric; Numeric] Numeric
         let dscr =
             [
-                "`[#выражение 1] MOD [#выражение 2]` - операция вычисления остатка от деления."
-            ] |> String.concat "\n"
-        "mod", dscr, args [Numeric; Numeric] Numeric
-        let dscr =
-            [
                 "`NO [#выражение]` - отрицание. Верно, если `[#выражение]` ложно и наоборот (аналогично \"NOT\" в Basic)."
             ] |> String.concat "\n"
-        "no", dscr, arg Numeric Numeric
-        let dscr =
-            [
-                "`OBJ [$выражение]` - верно, если в рюкзаке есть предмет `[$выражение]`."
-            ] |> String.concat "\n"
-        "obj", dscr, arg String Numeric
-        let dscr =
-            [
-                "`LOC [$выр]` - верно, если в игре есть локация с названием `[$выр]`."
-            ] |> String.concat "\n"
-        "loc", dscr, arg String Numeric
+        "not", dscr, arg Numeric Numeric
     ]
 let keywords =
     [

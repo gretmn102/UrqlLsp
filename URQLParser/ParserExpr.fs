@@ -244,9 +244,9 @@ let pExprNew : _ Parser =
         // TODO: `no` — ассоциативный оператор, потому допустимо такое: `no (no -1)`
         let pNo, pNoRef = createParserForwardedToRef()
         pNoRef :=
-            pstringCI "no" TokenType.Procedure >>? notFollowedVarCont >>. ws >>. pNo
-            |>> fun e1 -> UnarExpr(No, e1)
-        pNo <|> pCompare pNo .>> ws
+            pstringCI "not" TokenType.Procedure >>? notFollowedVarCont >>. ws >>. pCompare pNo
+            |>> fun e1 -> UnarExpr(Not, e1)
+        pCompare pNo .>> ws
     let pAnd =
         chainl1 (pNo .>> ws)
             ((pstringCI "and" TokenType.Procedure >>? notFollowedVarCont >>. ws >>% And)

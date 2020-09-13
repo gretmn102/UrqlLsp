@@ -78,7 +78,7 @@ let showValue showExpr showStmtsInline = function
         |> bet "'" "'"
 let ops = Op.toString >> showString
 
-let unar = function No -> "no" | Neg -> "-"
+let unar = function Not -> "not" | Neg -> "-"
 let showFuncName = function
     | PredefUndef.Predef name ->
         match Map.tryFind name Qsp.Defines.functionBySymbolic with
@@ -106,7 +106,7 @@ let rec simpleShowExpr showStmtsInline expr : ShowS =
                     showParen true (List.map f args |> join ", ")
             showFuncName name << args
         | UnarExpr(op, e) ->
-            let space = function No -> showSpace | Neg -> id
+            let space = function Not -> showSpace | Neg -> id
             let x =
                 match e with
                 | Expr(_, _, _) ->
@@ -147,7 +147,7 @@ let rec showExpr showStmtsInline = function
                     (List.map (showExpr showStmtsInline) args |> join ", ")
         showFuncName name << args
     | UnarExpr(op, e) ->
-        let space = function No -> showSpace | Neg -> id
+        let space = function Not -> showSpace | Neg -> id
         showString (unar op) << space op << showExpr showStmtsInline e
     | Expr(op, e1, e2) ->
         let prec = Precedences.OpB >> Precedences.prec

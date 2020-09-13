@@ -88,14 +88,13 @@ module Op =
 type UnarOp =
     /// `-`
     | Neg
-    /// `no`
-    | No
+    | Not
 
 [<CompilationRepresentation(CompilationRepresentationFlags.ModuleSuffix)>]
 [<RequireQualifiedAccess>]
 module UnarOp =
     [<ReflectedDefinition>]
-    let toString = function Neg -> "-" | No -> "no"
+    let toString = function Neg -> "-" | Not -> "not"
     let ops =
         Reflection.Reflection.unionEnum<UnarOp>
         |> Array.map (fun x -> x, toString x)
@@ -108,7 +107,7 @@ module Precedences =
     let prec = function
         | OpB Or -> 1
         | OpB And -> 2
-        | PrefB No -> 3
+        | PrefB Not -> 3
         // =     | <      | >      | <>     | <=     | >=     | ==
         | OpB Eq | OpB Lt | OpB Gt | OpB Ne | OpB Le | OpB Ge | OpB Similar -> 5
         | OpB Plus | OpB Minus -> 6

@@ -106,7 +106,7 @@ module CommandResponse =
                     "operatorLogical"
             | UnaryOperator(unaryOperator) ->
                 match unaryOperator with
-                | Ast.UnarOp.No -> "operatorLogical"
+                | Ast.UnarOp.Not -> "operatorLogical"
                 | Ast.UnarOp.Neg -> "operatorArithmetic"
             | OperatorAssignment -> "operatorAssignment"
             | PunctuationTerminatorStatement -> "punctuationTerminatorStatement"
