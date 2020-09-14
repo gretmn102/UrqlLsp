@@ -113,6 +113,7 @@ let rec simpleShowExpr showStmtsInline expr : ShowS =
                     showParen true (f e)
                 | Arr(_, _) // `-(arr[idx])` лучше выглядит, чем `-arr[idx]`?
                 | Func(_, _) // `-(func(idx))` лучше выглядит, чем `-(arr(idx))`?
+                | InvHas _
                 | UnarExpr _
                 | Val _
                 | Var _ ->
@@ -127,6 +128,7 @@ let rec simpleShowExpr showStmtsInline expr : ShowS =
                 | Expr(_, _, _) ->
                     showParen true (f body)
                 | Func(_, _)
+                | InvHas _
                 | Arr(_, _) ->
                     f body
             f e1 << showSpace
@@ -134,6 +136,7 @@ let rec simpleShowExpr showStmtsInline expr : ShowS =
             << f e2
         | Arr(var, es) ->
             showVar var << bet "[" "]" (List.map f es |> join ", ")
+        | InvHas(itemName) -> showString "inv_" << showString itemName
     f expr
 let rec showExpr showStmtsInline = function
     | Val v -> showValue (showExpr showStmtsInline) showStmtsInline v
@@ -146,6 +149,7 @@ let rec showExpr showStmtsInline = function
                 showParen true
                     (List.map (showExpr showStmtsInline) args |> join ", ")
         showFuncName name << args
+    | InvHas(itemName) -> showString "inv_" << showString itemName
     | UnarExpr(op, e) ->
         let space = function Not -> showSpace | Neg -> id
         showString (unar op) << space op << showExpr showStmtsInline e

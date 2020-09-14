@@ -156,6 +156,7 @@ and Value =
 and Expr =
     | Val of Value
     | Var of var:Var
+    | InvHas of itemName:string
     | Func of Defines.PredefFunc PredefUndef * Expr list
     | Arr of var:Var * Expr list
     | UnarExpr of UnarOp * Expr

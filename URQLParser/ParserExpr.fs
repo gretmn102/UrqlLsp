@@ -69,6 +69,31 @@ let ws =
             (appendToken TokenType.Underscore (pchar '_')
              >>? ((ws1 >>? skipNewline) <|> skipNewline) >>. spaces)
 
+let identWithSpaces =
+    // https://github.com/fireton/fireurq/blob/406e835f3dc07aecd65d0726d1546c356f3b1f0a/furqTypes.pas#L55
+    let ident =
+        many1Satisfy2L
+            (fun c -> isLetter c || c = '_')
+            (fun c -> isLetter c || c = '_' || isDigit c )
+            "identifier"
+    // https://github.com/fireton/fireurq/blob/2a4f9d8fe29b174bfa21112336550a59f50ecbee/furqExprEval.pas#L346
+    let notFollowedByBinOpIdent =
+        let p =
+            pbinaryOperator
+            .>> (skipSatisfy (not << isIdentifierChar)
+                 <|> eof)
+        notFollowedByL p "keyword"
+        >>. ident
+    pipe2
+        notFollowedByBinOpIdent
+        (many (ws1Take .>>.? notFollowedByBinOpIdent |>> fun (ws, xs) -> [ws; xs]))
+        (fun x y -> x :: List.concat y |> System.String.Concat)
+
+let invHas : _ Parser =
+    appendToken TokenType.Procedure (pstringCI "inv_")
+    >>. ws
+    >>. appendToken TokenType.Variable identWithSpaces
+    |>> InvHas
 let term expr =
     let getDesc (varType, (name:string)) =
         match varType with
@@ -191,6 +216,8 @@ let term expr =
                 p
                 >>% Func(Predef x.SymbolicName, args)
         <|> pcallFunctionOrArrOrVar
+    let customFuncs =
+        invHas
     let pval =
         choice [
             // TODO: `pbraces` — он точно нужен?
@@ -200,7 +227,7 @@ let term expr =
         ]
         |>> Val
     ptermRef := pval <|> pcallFuncOrArrOrVar
-    pval <|> pcallFuncOrArrOrVar <|> bet_ws '(' ')' expr
+    pval <|> customFuncs <|> pcallFuncOrArrOrVar <|> bet_ws '(' ')' expr
 
 let pExprNew : _ Parser =
     let pExpr, pExprRef = createParserForwardedToRef()
