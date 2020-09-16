@@ -107,7 +107,7 @@ module CommandResponse =
             | UnaryOperator(unaryOperator) ->
                 match unaryOperator with
                 | Ast.UnarOp.Not -> "operatorLogical"
-                | Ast.UnarOp.Neg -> "operatorArithmetic"
+                | Ast.UnarOp.Neg | Ast.UnarOp.Positive -> "operatorArithmetic"
             | OperatorAssignment -> "operatorAssignment"
             | PunctuationTerminatorStatement -> "punctuationTerminatorStatement"
             | Text
@@ -127,8 +127,8 @@ module CommandResponse =
         }
 let changeExtensionToQsp path =
     System.IO.Path.ChangeExtension(path, ".qsp")
-let txt2qspPath = @"3rd\txt2gam.exe"
-let buildQsp src =
+
+let buildQsp txt2qspPath src =
     let dst = changeExtensionToQsp src
     let args = sprintf "\"%s\" \"%s\"" src dst
     let startProcString path args =
@@ -834,40 +834,6 @@ type BackgroundServiceServer(state: State, client: FsacClient) =
     //         }
     //     return LspResult.success None
     // }
-    member __.BuildSource (uriStr:UriString) isRun =
-        async {
-            if System.Environment.OSVersion.Platform = System.PlatformID.Win32NT then
-                // let uri = "file:///e:/Project/Qsp/QSP-LSP/3rd/txt2gam.exe"
-                let uri =
-                    try
-                        let uri = System.Uri uriStr
-                        uri.LocalPath
-                        |> Right
-                    with e ->
-                        Left e.Message
-                let res =
-                    match uri with
-                    | Right path ->
-                        try
-                            let code, output = buildQsp path
-                            if code = 0 then
-                                if isRun then
-                                    changeExtensionToQsp path
-                                    |> System.Diagnostics.Process.Start
-                                    |> ignore
-
-                                Choice2Of2 "Ok"
-                            else
-                                Choice1Of2 (sprintf "txt2gam returned:\n%s" output)
-                        with e ->
-                            Choice1Of2 e.Message
-                    | Left err ->
-                        Choice1Of2 (sprintf "'%s'\n%A" uriStr err)
-                return LspResult.success res
-            else
-                let res = Choice1Of2 (sprintf "Пока что txt2gam есть только Windows")
-                return LspResult.success res
-        }
 
     override __.Initialize p =
         async {
@@ -930,8 +896,6 @@ let main argv =
         defaultRequestHandlings<BackgroundServiceServer>()
         |> Map.add "fsharp/highlighting" (requestHandling (fun s p -> s.GetHighlighting(p) ))
         |> Map.add "fsharp/workspaceLoad" (requestHandling (fun s p -> s.FSharpWorkspaceLoad(p) ))
-        |> Map.add "urql/build" (requestHandling (fun s p -> s.BuildSource p false ))
-        |> Map.add "urql/buildAndRun" (requestHandling (fun s p -> s.BuildSource p true ))
 
     Server.start requestsHandlings input output FsacClient (fun lspClient -> BackgroundServiceServer((), lspClient))
     |> printfn "%A"

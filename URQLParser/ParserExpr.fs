@@ -242,6 +242,7 @@ let pExprNew : _ Parser =
     let pNeg =
         pchar '-' (TokenType.UnaryOperator Neg) >>. ws >>. term
         |>> fun e1 -> UnarExpr(Neg, e1)
+        <|> (pchar '+' (TokenType.UnaryOperator Positive) >>. ws >>. term)
     let pProd =
         chainl1 (pNeg <|> term .>> ws)
             ((pchar '*' (TokenType.BinaryOperator Times) >>% Times

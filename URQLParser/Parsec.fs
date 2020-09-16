@@ -108,6 +108,10 @@ let psub: _ Parser =
         >>? appendToken Tokens.TokenType.ConstantNumericInteger pint32
         |>> (char >> SubAsciiChar)
         .>> appendToken Tokens.TokenType.InterpolationEnd (pchar '$')
+    let pspace =
+        appendToken Tokens.TokenType.InterpolationBegin (pchar '#')
+        >>? appendToken Tokens.TokenType.InterpolationEnd (pchar '$')
+        >>% SubSpace
     let ident =
         many1Satisfy (isNoneOf "#$\n")
 
@@ -127,9 +131,9 @@ let psub: _ Parser =
                 <|> (many1 p |>> fun x -> Subs(Option.isSome isStr, x)
                      .>> appendToken Tokens.TokenType.InterpolationEnd (pchar '$'))
 
-    psubref := pansiCode <|> p
+    psubref := pansiCode <|> pspace <|> p
     psub
-
+    
 let link: _ Parser =
     appendToken Tokens.TokenType.InterpolationBegin (pstring "[[")
     >>. applyRange
@@ -191,7 +195,11 @@ let pinv pcontent: _ Parser =
             pcontent
     appendToken Tokens.Procedure
         (pstringCI "inv")
-    >>? (p1 .>>? notFollowedByString "," |>> Inv)
+    >>? (notFollowedBy
+            (skipManySatisfy (isNoneOf "\n,&") >>. skipSatisfy (isAnyOf ",")) >>. p1
+         <|> (followedBy (skipSatisfy (isAnyOf "+-")) <|> ws1
+              >>? pexpr .>> ws .>> pchar ',' .>> ws .>>. pcontent)
+         |>> Inv)
 let plnOutside pcontent: _ Parser =
     appendToken Tokens.Procedure
         (pstringCI "pln" <|> pstringCI "println" >>% true

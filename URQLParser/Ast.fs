@@ -89,12 +89,14 @@ type UnarOp =
     /// `-`
     | Neg
     | Not
+    /// Just `+`, because... just because
+    | Positive
 
 [<CompilationRepresentation(CompilationRepresentationFlags.ModuleSuffix)>]
 [<RequireQualifiedAccess>]
 module UnarOp =
     [<ReflectedDefinition>]
-    let toString = function Neg -> "-" | Not -> "not"
+    let toString = function Neg -> "-" | Not -> "not" | Positive -> "+"
     let ops =
         Reflection.Reflection.unionEnum<UnarOp>
         |> Array.map (fun x -> x, toString x)
@@ -112,7 +114,7 @@ module Precedences =
         | OpB Eq | OpB Lt | OpB Gt | OpB Ne | OpB Le | OpB Ge | OpB Similar -> 5
         | OpB Plus | OpB Minus -> 6
         | OpB Times | OpB Divide -> 8
-        | PrefB Neg -> 9
+        | PrefB Neg | PrefB Positive -> 9
 [<Struct>]
 type VarType =
     /// `varName`, если к такой присвоить строковое значение, то интерпретатор попытается преобразовать ее в число. Если не получится, выбьет ошибку.
@@ -130,6 +132,8 @@ type Substitution =
     | Subs of isString:bool * Substitution list
     | SubVar of string
     | SubAsciiChar of char
+    /// `#$` — space, but `# $` or `#  $` and etc — error
+    | SubSpace
 type TextElement =
     | Substitution of Substitution
     | JustText of string
