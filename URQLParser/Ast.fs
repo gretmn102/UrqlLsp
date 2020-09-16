@@ -115,18 +115,11 @@ module Precedences =
         | OpB Plus | OpB Minus -> 6
         | OpB Times | OpB Divide -> 8
         | PrefB Neg | PrefB Positive -> 9
-[<Struct>]
-type VarType =
-    /// `varName`, если к такой присвоить строковое значение, то интерпретатор попытается преобразовать ее в число. Если не получится, выбьет ошибку.
-    | ImplicitNumericType
-    /// `#varName`, если к такой присвоить строковое значение, то интерпретатор попытается преобразовать ее в число. Если не получится, выбьет ошибку.
-    | ExplicitNumericType
-    /// `$varName`, к такой переменной можно смело присваивать и число, и строку
-    | StringType
+
 type 'Predef PredefUndef =
     | Predef of 'Predef
     | Undef of string
-type Var = VarType * string
+type Var = string
 /// `#sub#insub#iside$$fo#bar$o$` -> `(sub(insub(iside))fo(bar)o)`
 type Substitution =
     | Subs of isString:bool * Substitution list

@@ -164,7 +164,7 @@ let pGetDefLocPos locName =
             )
 
 let appendVarHighlight (r:Tokens.InlineRange) (var:Ast.Var) highlightKind =
-    let var = mapSnd String.toLower var // for case-insensitively
+    let var = String.toLower var // for case-insensitively
     updateUserState (fun st ->
         { st with
             Highlights =

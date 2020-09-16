@@ -17,39 +17,6 @@ let pbinaryOperator : _ Parser =
     |> List.map pstringCI
     |> choice
 
-/// берёт только то, что начинается с `#` или `$`
-let pexplicitVar varHighlightKind : _ Parser =
-    let isIdentifierFirstChar c = isLetter c || c = '_'
-    let p = many1Satisfy2L isIdentifierFirstChar isIdentifierChar "identifier"
-    // TODO: или просто `many1Satisfy isIdentifierChar` ?
-    let varType =
-        choice [
-            pchar '#' >>% ExplicitNumericType
-            pchar '$' >>% StringType
-        ]
-
-    (getPosition .>>.? varType) .>>. (p .>>. getPosition)
-    >>= fun ((p1, typ), (varName, p2)) ->
-        let range = toRange p1 p2
-        let msg =
-            match typ with
-            | StringType ->
-                Defines.vars
-                |> Map.tryFind (sprintf "$%s" (varName.ToLower()))
-                |> function
-                    | Some dscr -> dscr
-                    | None -> "Пользовательская глобальная переменная строчного типа"
-            | ExplicitNumericType ->
-                Defines.vars
-                |> Map.tryFind (sprintf "#%s" (varName.ToLower()))
-                |> function
-                    | Some dscr -> dscr
-                    | None -> "Пользовательская глобальная переменная числового типа"
-            | ImplicitNumericType -> failwith "Not Implemented"
-        appendToken2 Tokens.Variable range
-        >>. appendHover2 (RawDescription msg) range
-        >>. appendVarHighlight range (typ, varName) varHighlightKind
-        >>. preturn (typ, varName)
 type ProcOrFunc =
     | Procedure of string
     | Function of string
@@ -95,51 +62,24 @@ let invHas : _ Parser =
     >>. appendToken TokenType.Variable identWithSpaces
     |>> InvHas
 let term expr =
-    let getDesc (varType, (name:string)) =
-        match varType with
-        | StringType ->
-            Defines.vars
-            |> Map.tryFind (sprintf "$%s" (name.ToLower()))
-            |> function
-                | Some dscr -> dscr
-                | None -> "Пользовательская глобальная переменная строчного типа"
-        | ExplicitNumericType ->
-            Defines.vars
-            |> Map.tryFind (sprintf "#%s" (name.ToLower()))
-            |> function
-                | Some dscr -> dscr
-                | None -> "Пользовательская глобальная переменная числового типа"
-        | ImplicitNumericType ->
-            Defines.vars
-            |> Map.tryFind (name.ToLower())
-            |> function
-                | Some dscr -> dscr
-                | None ->
-                    "Пользовательская глобальная переменная числового типа"
+    let getDesc (name:string) =
+        Defines.vars
+        |> Map.tryFind (sprintf "$%s" (name.ToLower()))
+        |> function
+            | Some dscr -> dscr
+            | None -> "Пользовательская глобальная переменная"
+
     let pterm, ptermRef = createParserForwardedToRef()
     let pcallFuncOrArrOrVar =
         let pBracesArgs =
             bet_ws '(' ')' (sepBy expr (pchar ',' >>. ws))
         let pcallFunctionOrArrOrVar =
-            let pimplicitVar =
-                notFollowedByBinOpIdent |>> fun x -> ImplicitNumericType, x
-            let pexplicitVar =
-                let isIdentifierFirstChar c = isLetter c || c = '_'
-                let p = many1Satisfy2L isIdentifierFirstChar isIdentifierChar "identifier"
-                // TODO: или просто `many1Satisfy isIdentifierChar` ?
-                let varType =
-                    choice [
-                        pchar '#' >>% ExplicitNumericType
-                        pchar '$' >>% StringType
-                    ]
-                varType .>>. p
-
             tuple2
-                (applyRange (pexplicitVar <|> pimplicitVar) .>> ws)
+                (applyRange notFollowedByBinOpIdent .>> ws)
                 ((pBracesArgs
                   |>> fun args ->
                     let tokenType = TokenType.Function
-                    fun (funType, name) range ->
+                    fun var range ->
                         let p =
                             [
                                 "Такой функции нет, а если есть, то напишите мне, автору расширения, пожалуйста, и я непременно добавлю."
@@ -149,18 +89,18 @@ let term expr =
                             |> appendSemanticError range
                         p
                         >>. appendToken2 tokenType range
-                        >>% Func(Undef name, args)
+                        >>% Func(Undef var, args)
                     )
                 //   Невозможно, поскольку неоднозначно трактуется `f+1` => `f(+1)` или `f + 1`
                 //   <|> (pterm |>> fun arg -> TokenType.Function, fun (typ', name) -> Func(name, [arg]))
-                  <|>% fun (varType, nameVar) range ->
-                        let desc = getDesc(varType, nameVar)
+                  <|>% fun var range ->
+                        let desc = getDesc var
                         appendHover2 (RawDescription desc) range
                         >>. appendToken2 TokenType.Variable range
-                        >>. appendVarHighlight range (varType, nameVar) VarHighlightKind.ReadAccess
-                        >>% Var(varType, nameVar))
-            >>= fun ((range, (varType, name)), f) ->
-                    f (varType, name) range
+                        >>. appendVarHighlight range var VarHighlightKind.ReadAccess
+                        >>% Var var)
+            >>= fun ((range, name), f) ->
+                    f name range
         // #load @"Defines.fs"
         // open Qsp
         let nullary, multiary =

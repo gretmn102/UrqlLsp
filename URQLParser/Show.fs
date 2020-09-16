@@ -14,12 +14,8 @@ type FormatConfig =
             TrimWhitespaceWhenSplit = false
         }
 
-let showVarType = function
-    | StringType -> showChar '$'
-    | ImplicitNumericType -> empty
-    | ExplicitNumericType -> showChar '#'
-let showVar (typ:VarType, varName:string) =
-    showVarType typ << showString varName
+let showVar varName =
+    showString varName
 
 let rec showStringLines showExpr showStmtsInline (lines:list<Line>) =
     lines

@@ -45,40 +45,26 @@ let pImplicitVarWhenAssign p =
                     let dscr = "Пользовательская глобальная переменная числового типа"
                     appendHover2 (RawDescription dscr) range
         >>. appendToken2 Tokens.TokenType.Variable range
-        >>. appendVarHighlight range (ImplicitNumericType, name) VarHighlightKind.WriteAccess
+        >>. appendVarHighlight range name VarHighlightKind.WriteAccess
         >>. preturn name
 
 let pAssign stmts =
-    let assdef name ass =
+    let assdef name =
         let str_ws s =
             appendToken Tokens.TokenType.OperatorAssignment
                 (pstring s)
             .>> ws
 
         choice [
-            str_ws "-=" >>. pexpr |>> fun defExpr -> Assign(ass, Expr.Expr(Minus, Var name, defExpr))
-            str_ws "/=" >>. pexpr |>> fun defExpr -> Assign(ass, Expr.Expr(Divide, Var name, defExpr))
-            str_ws "+=" >>. pexpr |>> fun defExpr -> Assign(ass, Expr.Expr(Plus, Var name, defExpr))
-            str_ws "*=" >>. pexpr |>> fun defExpr -> Assign(ass, Expr.Expr(Times, Var name, defExpr))
-            str_ws "=" >>. pexpr |>> fun defExpr -> Assign(ass, defExpr)
+            str_ws "-=" >>. pexpr |>> fun defExpr -> Assign(name, Expr.Expr(Minus, Var name, defExpr))
+            str_ws "/=" >>. pexpr |>> fun defExpr -> Assign(name, Expr.Expr(Divide, Var name, defExpr))
+            str_ws "+=" >>. pexpr |>> fun defExpr -> Assign(name, Expr.Expr(Plus, Var name, defExpr))
+            str_ws "*=" >>. pexpr |>> fun defExpr -> Assign(name, Expr.Expr(Times, Var name, defExpr))
+            str_ws "="  >>. pexpr |>> fun defExpr -> Assign(name, defExpr)
         ]
 
-    let assign name = assdef name name
-    let pExplicitAssign =
-        let p =
-            appendToken
-                Tokens.TokenType.Type
-                ((pstringCI "set" <|> pstringCI "let") .>>? notFollowedVarCont)
-            .>> ws
-            >>. (pexplicitVar VarHighlightKind.WriteAccess <|> (pImplicitVarWhenAssign ident |>> fun name -> ImplicitNumericType, name))
-        p <|> pexplicitVar VarHighlightKind.WriteAccess .>>? ws
-        >>=? assign
-
-    let pImlicitAssign =
-        pImplicitVarWhenAssign notFollowedByBinOpIdent .>>? ws
-        >>=? fun name ->
-            assign (ImplicitNumericType, name)
-    pExplicitAssign <|> pImlicitAssign
+    pImplicitVarWhenAssign notFollowedByBinOpIdent .>>? ws
+    >>=? assdef
 
 let textOutside: _ Parser =
     appendToken Tokens.Text
@@ -98,7 +84,7 @@ let pvar varHighlightKind (range, (varName:string)) =
                 "Пользовательская глобальная переменная числового типа"
     appendToken2 Tokens.Variable range
     >>. appendHover2 (RawDescription msg) range
-    >>. appendVarHighlight range (ImplicitNumericType, varName) varHighlightKind
+    >>. appendVarHighlight range varName varHighlightKind
 
 let psub: _ Parser =
     let psub, psubref = createParserForwardedToRef()
@@ -133,7 +119,7 @@ let psub: _ Parser =
 
     psubref := pansiCode <|> pspace <|> p
     psub
-    
+
 let link: _ Parser =
     appendToken Tokens.TokenType.InterpolationBegin (pstring "[[")
     >>. applyRange
