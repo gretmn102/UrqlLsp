@@ -173,10 +173,31 @@ let textInside: Text Parser =
         (ptext >>= fun (r, x) -> appendToken2 Tokens.Text r >>% JustText x
          <|> (psub |>> Substitution)
          <|> (link |>> Link))
+let pinv pcontent: _ Parser =
+    // * `inv expr, itemName`
 
+    // * `inv- item`
+    // * `inv+ itemName` or `inv itemName`
+    let p1 =
+        let p =
+            (skipChar '-' >>% 1)
+            <|> (skipChar '+' >>% -1)
+        tuple2
+            ((ws1 >>. opt p
+             <|> (p |>> Some))
+             |>> (Option.defaultValue 1
+                  >> fun x -> Val (Int x) )
+            )
+            pcontent
+    appendToken Tokens.Procedure
+        (pstringCI "inv")
+    >>? (p1 .>>? notFollowedByString "," |>> Inv)
 let plnOutside pcontent: _ Parser =
-    pstringCI "pln" >>. ws >>. pcontent
-    |>> Pln
+    appendToken Tokens.Procedure
+        (pstringCI "pln" <|> pstringCI "println" >>% true
+         <|> (pstringCI "print" <|> pstringCI "p" >>% false))
+    .>>.? ((skipNewline >>% []) <|> (ws1 >>. pcontent))
+    |>> P
 let gotoOutside pcontent: _ Parser =
     let p =
         ptext .>>. pcontent
@@ -187,9 +208,11 @@ let gotoOutside pcontent: _ Parser =
             else
                 appendToken2 Tokens.Text locRange
                 >>% (JustText locName)::xs
-    pstringCI "goto"
-    >>. ws
-    >>. (p <|> pcontent)
+
+    appendToken Tokens.Procedure
+        (pstringCI "goto" >>% false
+         <|> (pstring "proc" >>% true))
+    .>>.? (ws1 >>. (p <|> pcontent))
     |>> Goto
 
 let punknownProc =
@@ -335,6 +358,7 @@ let pcallProc : _ Parser =
     choice [
         plnOutside textInside
         gotoOutside textInside
+        pinv textInside
     ]
 let blockComment : _ Parser =
     appendToken Tokens.PunctuationDefinitionComment (pstring "/*")
@@ -409,10 +433,10 @@ let pstmt =
             pendKeyword >>% End
             pIf
             psub |>> SubStmt
-            pcallProc
+            pcallProc |>> Proc
             pAssign pstmts
 
-            punknownProc
+            punknownProc |>> Proc
         ]
     pstmtRef := (getPosition |>> (fparsecPosToPos >> NoEqualityPosition)) .>>.? p
     pstmt

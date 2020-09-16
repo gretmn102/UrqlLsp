@@ -162,12 +162,19 @@ and Expr =
     | UnarExpr of UnarOp * Expr
     | Expr of Op * Expr * Expr
 and PosStatement = NoEqualityPosition * Statement
-and Statement =
-    | SubStmt of Substitution
-    | Pln of Text
-    | Goto of Text
-    | Assign of var:Var * Expr
+and Proc =
+    | P of newline:bool * Text
+    /// if `returned` is true then `proc` else `goto`
+    | Goto of returned:bool * Text
+    /// * `inv+ item` or `inv item`
+    /// * `inv- item`
+    /// * `inv expr, item`
+    | Inv of Expr * Text
     | RawProc of string * Text
+and Statement =
+    | Proc of Proc
+    | SubStmt of Substitution
+    | Assign of var:Var * Expr
     | If of Expr * PosStatement list * PosStatement list
     | Label of string
     | BlockComment of string

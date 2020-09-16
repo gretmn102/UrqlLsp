@@ -198,6 +198,31 @@ let showText (xs:Text) : ShowS =
             << showString "]]"
     )
     |> join ""
+let showProc showStmtsInline = function
+    | RawProc(name, e) ->
+        let args =
+            if List.isEmpty e then
+                empty
+            else
+                showSpace << showText e
+        showString name << args
+    | P(nl, str) ->
+        if nl then showString "pln"
+        else showString "p"
+        << showSpace << showText str
+    | Goto(returned, lab) ->
+        if returned then showString "proc" else showString "goto"
+        << showSpace << showText lab
+    | Inv(e, str) ->
+        match e with
+        | Val (Int x) when x = 1 || x = -1 ->
+            showString "inv"
+            << if x > 0 then id else showChar '-'
+            << showSpace << showText str
+        | e ->
+            showString "inv"
+            << showSpace << showExpr showStmtsInline e
+            << showChar ',' << showSpace << showText str
 let showStmt indentsOption (formatConfig:FormatConfig) =
     let tabs =
         match indentsOption with
@@ -219,13 +244,6 @@ let showStmt indentsOption (formatConfig:FormatConfig) =
             [showAssign name' << spaceBetween (showChar '=' << ops op) << showExpr e]
         | Assign(ass, e) ->
             [showAssign ass << spaceBetween (showChar '=') << showExpr e]
-        | RawProc(name, e) ->
-            let args =
-                if List.isEmpty e then
-                    empty
-                else
-                    showSpace << showText e
-            [ showString name << args ]
         | Label s -> [showChar ':' << showString s]
         | If(e, thenBody, elseBody) ->
             let ifHeader e = showString "if" << showSpace << showExpr e << showSpace << showString "then"
@@ -239,11 +257,10 @@ let showStmt indentsOption (formatConfig:FormatConfig) =
             ]
         | Comment s -> [showChar ';' << showString s]
         | Exit -> [showString "exit"]
-        | Pln str -> [showString "pln" << showSpace << showText str ]
-        | Goto lab -> [showString "goto" << showSpace << showText lab ]
         | BlockComment str -> [showString "/*" << showString str << showString "*/"]
         | End -> [showString "end"]
         | SubStmt x -> [showSub x]
+        | Proc x -> [showProc showStmtsInline x]
     f'
 
 let showLoc indentsOption isSplitStringPl (name, statements) : ShowS list =
