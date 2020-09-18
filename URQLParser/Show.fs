@@ -195,6 +195,14 @@ let showText (xs:Text) : ShowS =
             << showString "]]"
     )
     |> join ""
+let showLabelCall showStmtsInline ((locName, args):LabelCall) =
+    let args =
+        if List.isEmpty args then
+            id
+        else
+            showParen true (List.map (showExpr showStmtsInline) args |> join ", ")
+    showString locName << args
+
 let showProc showStmtsInline = function
     | RawProc(name, e) ->
         let args =
@@ -220,6 +228,10 @@ let showProc showStmtsInline = function
             showString "inv"
             << showSpace << showExpr showStmtsInline e
             << showChar ',' << showSpace << showText str
+    | Btn(labelCall, text) ->
+        showLabelCall showStmtsInline labelCall
+        << showChar ','
+        << showSpace << showText text
 let showStmt indentsOption (formatConfig:FormatConfig) =
     let tabs =
         match indentsOption with

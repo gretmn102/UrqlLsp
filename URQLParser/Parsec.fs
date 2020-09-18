@@ -119,6 +119,37 @@ let psub: _ Parser =
 
     psubref := pansiCode <|> pspace <|> p
     psub
+let genKeywordParser tokenType keyword =
+    let dscr =
+        Defines.keywords
+        |> List.tryPick (fun (name, dscr) ->
+            if name = keyword then Some dscr
+            else None)
+        |> Option.defaultWith (fun () -> failwithf "not found %s" keyword)
+    appendTokenHover tokenType (RawDescription dscr)
+        (skipStringCI keyword .>>? notFollowedVarCont)
+
+let pelseKeyword : _ Parser =
+    genKeywordParser Tokens.TokenType.Else "else"
+
+let plabelName: _ Parser =
+    applyRange
+        (notFollowedByL pelseKeyword "else"
+         >>? many1Strings
+                (choice [
+                    many1Satisfy (isNoneOf " \n|]&;/#(,")
+                    pstring "]" .>>? notFollowedByString "]" // for `[[locName]]`
+                    pstring "/" .>>? notFollowedByString "*" // for `/* */`
+                    // pstring "[" .>>? notFollowedByString "[" // ?
+                    ws1Take .>>? notFollowedBy (skipSatisfy (isAnyOf "\n&;") <|> pelseKeyword)
+                ]))
+let plabelCall: LabelCall Parser =
+    plabelName .>> ws
+    .>>. (bet_ws '(' ')' (sepBy pexpr (pchar ',' >>. ws))
+          <|>% [])
+    >>= fun ((locRange, locName), args) ->
+        applyLoc(locRange, locName)
+        >>% (locName, args)
 
 let link: _ Parser =
     appendToken Tokens.TokenType.InterpolationBegin (pstring "[[")
@@ -144,15 +175,11 @@ let link: _ Parser =
                 >>% (text, text)
 
 let ptext =
-    let notFollowedByElse =
-        skipStringCI "else"
-        .>> (skipSatisfy (not << isIdentifierChar)
-             <|> eof)
     applyRange
         (many1Strings
             (choice [
                 many1Satisfy (isNoneOf " \n&;/#[")
-                ws1Take .>>? notFollowedBy (skipSatisfy (isAnyOf "\n&;") <|> notFollowedByElse)
+                ws1Take .>>? notFollowedBy (skipSatisfy (isAnyOf "\n&;") <|> pelseKeyword)
                 pstring "/" .>>? notFollowedByString "*"
                 pstring "[" .>>? notFollowedByString "["
                 // skipNewline >>? pchar '_' >>% ""
@@ -192,22 +219,31 @@ let plnOutside pcontent: _ Parser =
          <|> (pstringCI "print" <|> pstringCI "p" >>% false))
     .>>.? ((skipNewline >>% []) <|> (ws1 >>. pcontent))
     |>> P
-let gotoOutside pcontent: _ Parser =
-    let p =
-        ptext .>>. pcontent
-        >>= fun ((locRange, locName), xs) ->
-            if List.isEmpty xs then
-                applyLoc(locRange, locName)
-                >>% [JustText locName]
-            else
-                appendToken2 Tokens.Text locRange
-                >>% (JustText locName)::xs
 
+let gotoOutside pcontent: _ Parser =
+    let plabelCall pcontent =
+        let p =
+            ptext .>>. pcontent
+            >>= fun ((locRange, locName), xs) ->
+                if List.isEmpty xs then
+                    applyLoc(locRange, locName)
+                    >>% [JustText locName]
+                else
+                    appendToken2 Tokens.Text locRange
+                    >>% (JustText locName)::xs
+        p <|> pcontent
     appendToken Tokens.Procedure
         (pstringCI "goto" >>% false
          <|> (pstring "proc" >>% true))
-    .>>.? (ws1 >>. (p <|> pcontent))
+    .>>.? (ws1 >>. plabelCall pcontent)
     |>> Goto
+
+let btn pcontent: _ Parser =
+    appendToken Tokens.Procedure
+        (pstringCI "btn")
+    >>? ws1 >>. plabelCall .>> pchar ','
+    .>> ws .>>. appendToken Tokens.Text pcontent
+    |>> Btn
 
 let punknownProc =
     applyRange notFollowedByBinOpIdent
@@ -353,6 +389,7 @@ let pcallProc : _ Parser =
         plnOutside textInside
         gotoOutside textInside
         pinv textInside
+        btn textInside
     ]
 let blockComment : _ Parser =
     appendToken Tokens.PunctuationDefinitionComment (pstring "/*")
@@ -369,16 +406,6 @@ let inlineComment : _ Parser =
     >>. appendToken Tokens.Comment
             (manySatisfy ((<>) '\n'))
     |>> Comment
-
-let genKeywordParser tokenType keyword =
-    let dscr =
-        Defines.keywords
-        |> List.tryPick (fun (name, dscr) ->
-            if name = keyword then Some dscr
-            else None)
-        |> Option.defaultWith (fun () -> failwithf "not found %s" keyword)
-    appendTokenHover tokenType (RawDescription dscr)
-        (pstringCI keyword .>>? notFollowedVarCont)
 
 let pendKeyword : _ Parser =
     genKeywordParser Tokens.TokenType.End "end"
@@ -405,8 +432,7 @@ let pstmt =
             genKeywordParser Tokens.TokenType.Then "then"
         let pifKeyword : _ Parser =
             genKeywordParser Tokens.TokenType.If "if"
-        let pelseKeyword : _ Parser =
-            genKeywordParser Tokens.TokenType.Else "else"
+
         let pifHeader = pifKeyword .>> ws >>. pexpr .>> pthenKeyword
 
         let pElse1 =

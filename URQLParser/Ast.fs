@@ -159,6 +159,7 @@ and Expr =
     | UnarExpr of UnarOp * Expr
     | Expr of Op * Expr * Expr
 and PosStatement = NoEqualityPosition * Statement
+and LabelCall = LocationName * Expr list
 and Proc =
     | P of newline:bool * Text
     /// if `returned` is true then `proc` else `goto`
@@ -167,6 +168,7 @@ and Proc =
     /// * `inv- item`
     /// * `inv expr, item`
     | Inv of Expr * Text
+    | Btn of LabelCall * Text
     | RawProc of string * Text
 and Statement =
     | Proc of Proc
