@@ -419,28 +419,29 @@ let pstmts1' pstmt =
         (pstmt .>> spaces
          .>> (skipMany (ppunctuationTerminator .>> spaces)))
 let pstmt =
-    let underscore = newline >>? skipChar '_' >>. ws
+    let nlUnderscore =
+        skipNewline >>? spaces >>? skipChar '_' >>. ws
+        .>> skipMany (ppunctuationTerminator >>. ws)
+
     let pstmt, pstmtRef = createParserForwardedToRef<PosStatement, _>()
-    let pInlineStmts =
-        many (pstmt .>> ws .>> skipMany (ppunctuationTerminator >>. ws <|> underscore))
-    let pInlineStmts1 =
-        many1 (pstmt .>> ws .>> skipMany (ppunctuationTerminator >>. ws <|> underscore))
-    let pstmts = pstmts' pstmt
+    let p =
+        pstmt .>> ws .>> skipMany (ppunctuationTerminator >>. ws)
+        .>> optional nlUnderscore
+    let pInlineStmts = many p
+    let pInlineStmts1 = many1 p
 
     let pIf =
-        let pthenKeyword : _ Parser =
-            genKeywordParser Tokens.TokenType.Then "then"
         let pifKeyword : _ Parser =
             genKeywordParser Tokens.TokenType.If "if"
+        let pthenKeyword : _ Parser =
+            genKeywordParser Tokens.TokenType.Then "then"
 
+        // if <cond> then <stmts> [else <stmts>]
         let pifHeader = pifKeyword .>> ws >>. pexpr .>> pthenKeyword
-
         let pElse1 =
-            pelseKeyword .>> (ws >>. optional underscore)
-            >>. (pInlineStmts1 .>> opt pthenKeyword
-                 <|> (spaces >>. pstmts .>> pthenKeyword))
+            pelseKeyword .>> (ws >>. optional nlUnderscore) >>. pInlineStmts1
         pipe3
-            (pifHeader .>> (ws >>. optional underscore))
+            (pifHeader .>> (ws >>. optional nlUnderscore))
             (pInlineStmts1 .>> ws)
             (opt pElse1)
             (fun expr thenBody elseBody ->
@@ -454,7 +455,7 @@ let pstmt =
             pIf
             psub |>> SubStmt
             pcallProc |>> Proc
-            pAssign pstmts
+            pAssign (pstmts' pstmt)
 
             punknownProc |>> Proc
         ]
